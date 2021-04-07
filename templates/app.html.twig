@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Conagrivet App</title>
+
+        <link rel="icon" href="data:">
+
+        {% for style in styles %}
+            <link rel="stylesheet" href="/{{ base }}/assets/{{ style.getRelativePathname() }}">
+        {% endfor %}
+
+        {% for script in scripts %}
+            <script type="module" src="/{{ base }}/{{ script.getRelativePathname() }}"></script>
+        {% endfor %}
+
+    </head>
+    <body>
+        <h1>Some other stuff</h1>
+
+        <div id="app"></div>
+    </body>
+</html>

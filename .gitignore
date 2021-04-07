@@ -1,3 +1,11 @@
+/collections/
+/phpstan.neon
+.phplint-cache
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+/php_errorlog
 
 ###> symfony/framework-bundle ###
 /.env.local
@@ -8,15 +16,6 @@
 /var/
 /vendor/
 ###< symfony/framework-bundle ###
-
-/collections/
-/phpstan.neon
-.phplint-cache
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
-/php_errorlog
 
 ###> symfony/phpunit-bridge ###
 .phpunit

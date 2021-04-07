@@ -1,6 +1,15 @@
-controllers:
-    resource: ../../src/Controller/
+api:
+    # '*' avoids recurse inside subdirectories
+    resource: ../../src/Controller/*
     type: annotation
+    prefix: '/api/v1'
+    name_prefix: 'api_v1_'
+    stateless: true
+
+frontend:
+    resource: ../../src/Controller/Front/
+    type: annotation
+    stateless: true
 
 kernel:
     resource: ../../src/Kernel.php
