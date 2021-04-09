@@ -14,11 +14,14 @@
         {% for script in scripts %}
             <script type="module" src="/{{ base }}/{{ script.getRelativePathname() }}"></script>
         {% endfor %}
-
     </head>
     <body>
-        <h1>Some other stuff</h1>
+        <header></header>
+        <main id="content">
 
-        <div id="app"></div>
+            <div id="calendar"></div>
+
+        </main>
+        <footer></footer>
     </body>
 </html>
