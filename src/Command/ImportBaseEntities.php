@@ -39,7 +39,6 @@ class ImportBaseEntities extends Command
     protected function configure()
     {
         $this->setDescription('Loads activity codification from raw dataset');
-        $this->setAliases(['app:activities']);
         $this->addOption('delete', null,InputOption::VALUE_OPTIONAL, "Deletes entities not present in the raw database", false);
     }
 

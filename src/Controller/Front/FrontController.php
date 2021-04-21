@@ -10,26 +10,34 @@ use Symfony\Component\Routing\Annotation\Route;
 
 class FrontController extends AbstractController
 {
+    const APP_DIRECTORY = 'app';
+
+    #[Route('/contracts', name: 'contracts')]
+    public function generateContracts(): Response
+    {
+        return $this->render('contracts.html.twig', [
+            'base' => static::APP_DIRECTORY
+        ]);
+    }
+
     #[Route('/{req<(?!api\/).*>}', name: 'index')]
     public function index(): Response
     {
-        $appDirectory = 'app';
-
         $scripts = Finder::create()
-            ->in($this->getParameter('kernel.project_dir') ."/public/{$appDirectory}")
+            ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY)
             ->depth('== 0')
             ->files()
             ->name('*.js');
 
         $styles = Finder::create()
-            ->in($this->getParameter('kernel.project_dir') ."/public/{$appDirectory}/assets")
+            ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY."/assets")
             ->files()
             ->name('*.css');
 
         return $this->render('app.html.twig', [
             'scripts' => $scripts,
             'styles' => $styles,
-            'base' => $appDirectory
+            'base' => static::APP_DIRECTORY
         ]);
     }
 }
