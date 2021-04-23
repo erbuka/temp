@@ -19,22 +19,15 @@ class RecipientRepository extends ServiceEntityRepository
         parent::__construct($registry, Recipient::class);
     }
 
-    // /**
-    //  * @return Recipient[] Returns an array of Recipient objects
-    //  */
-    /*
-    public function findByExampleField($value)
+    public function findOneByTaxId(string $taxId): ?Recipient
     {
         return $this->createQueryBuilder('r')
-            ->andWhere('r.exampleField = :val')
-            ->setParameter('val', $value)
-            ->orderBy('r.id', 'ASC')
-            ->setMaxResults(10)
+            ->where('r.vatId = :taxid OR r.fiscalCode = :taxid')
+            ->setParameter('taxid', $taxId)
             ->getQuery()
-            ->getResult()
+            ->getOneOrNullResult()
         ;
     }
-    */
 
     /*
     public function findOneBySomeField($value): ?Recipient

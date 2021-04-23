@@ -17,9 +17,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-class ImportBaseEntities extends Command
+class ImportEntities extends Command
 {
-    protected static $defaultName = 'app:import-base-entities';
+    protected static $defaultName = 'app:import-entities';
 
     protected EntityManagerInterface $entityManager;
     protected Connection $rawConnection;
@@ -66,7 +66,7 @@ class ImportBaseEntities extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT DISTINCT `name`, hours, hours_onpremises, hours_remote
+SELECT DISTINCT TRIM(`name`) as `name`, hours, hours_onpremises, hours_remote
 FROM activity
         ";
 
@@ -83,7 +83,7 @@ FROM activity
             $activity->setHoursOnPremises((int)$onPremises);
 
             $errors = $this->validator->validate($activity);
-            assert(!empty($errors), "Cannot validate activity {$activity->getName()}: ". $errors);
+            assert(!count($errors), "Cannot validate activity {$activity->getName()}: ". $errors);
 
             $em->persist($activity);
             if (array_key_exists($activity->getName(), $deleted))
@@ -132,7 +132,7 @@ FROM activity
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT DISTINCT company as `name`, company_vat as vat, company_address as address
+SELECT DISTINCT TRIM(company) as `name`, TRIM(company_vat) as vat, TRIM(company_address) as address
 FROM company_consultant_activity
 GROUP BY `name`
 ";
@@ -142,12 +142,16 @@ GROUP BY `name`
             if (!$recipient)
                 $recipient = new Recipient();
 
+            if (strlen($vat) == 16) {
+                $recipient->setFiscalCode($vat);
+            } else
+                $recipient->setVatId($vat);
+
             $recipient->setName($name);
-            $recipient->setTaxId($vat);
             $recipient->setHeadquarters($address);
 
             $errors = $this->validator->validate($recipient);
-            assert(!empty($errors), "Cannot validate activity {$recipient->getName()}: ". $errors);
+            assert(!count($errors), "Cannot validate activity {$recipient->getName()}: ". $errors);
 
             $em->persist($recipient);
             if (array_key_exists($recipient->getName(), $deleted))
@@ -196,7 +200,7 @@ GROUP BY `name`
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT DISTINCT consultant as `name`, GROUP_CONCAT(DISTINCT consultant_category SEPARATOR ' ') as job_title
+SELECT DISTINCT TRIM(consultant) as `name`, GROUP_CONCAT(DISTINCT consultant_category) as job_title
 FROM company_consultant_activity
 GROUP BY `name`
         ";
@@ -210,7 +214,7 @@ GROUP BY `name`
             $consultant->setJobTitle($jobTitle);
 
             $errors = $this->validator->validate($consultant);
-            assert(!empty($errors), "Cannot validate activity {$consultant->getName()}: ". $errors);
+            assert(!count($errors), "Cannot validate activity {$consultant->getName()}: ". $errors);
 
             $em->persist($consultant);
             if (array_key_exists($consultant->getName(), $deleted))

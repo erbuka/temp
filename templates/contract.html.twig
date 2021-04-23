@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="it-IT">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Conagrivet Contracts</title>
+
+        <link rel="stylesheet" href="{{ asset(base ~ '/assets/styles/contracts.css') }}">
+
+        <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>
+
+    </head>
+    <body>
+        <main id="content">
+
+            <article class="contract">
+                <h1>
+                    PSR Toscana 2014/2020<br/>
+                    Sottomisura 2.1 “Sostegno ad avvalersi ai servizi di consulenza”<br/>
+                </h1>
+
+                <section class="parties">
+                    <p>Il giorno
+                        <input class="fill-blank" type="text" size="4" />
+                        del mese di
+                        <input class="fill-blank" type="text" size="17" />
+                        dell'anno
+                        <input class="fill-blank" type="text" size="6" />
+                        fra le parti:
+                    </p>
+
+                    <ul class="no-style">
+                        <li>CONAGRIVET S.R.L. con sede legale in 53048 Sinalunga (SI), Via Faustina e Pietro Zappalorto n. 1 int. 8/C, C.F. e P.IVA 01487210526, in persona del Presidente del Consiglio di Amministrazione e Direttore Tecnico del progetto Per. Agr. Fiorenzo Belelli, nato a Castiglion Fiorentino (AR) il 23 gennaio 1973, C.F. BLLFNZ73A23C319W e domiciliato per la carica in 53048 Sinalunga (SI), Via Faustina e Pietro Zappalorto n. 1 int. 8/C, di seguito per brevità indicato come “soggetto fornitore del servizio di consulenza”;</li>
+                        <li>
+                            Sig./Sig.ra <input class="fill-blank" type="text" size="79"><br>
+                            nato/a <input class="fill-blank" type="text" size="53" placeholder="San Valentino in Abruzzo Citeriore">
+                            il <input class="fill-blank" type="text" size="15">
+                            in qualità di titolare/legale rappresentante della ditta denominata {{ recipient.name|upper }}
+                            con sede legale in <input class="fill-blank" type="text" size="76" placeholder="Via Dietro a San Michele dei Leprosetti, 123/B, 33020, San Valentino in Abruzzo Citeriore"><br>
+                            ed operativa in <input class="fill-blank" type="text" size="74" placeholder="Via Dietro a San Michele dei Leprosetti, 123/B, 33020, San Valentino in Abruzzo Citeriore"> ,<br>
+
+                            {% if not recipient.fiscalCode is empty %}
+                            C.F. {{ recipient.fiscalCode|upper }},
+                            {% endif %}
+
+                            {% if not recipient.vatId is empty %}
+                            P.IVA {{ recipient.vatId|upper }},
+                            {% endif %}
+
+                            iscritta alla Camera di Commercio di <input class="fill-blank" type="text" size="30" placeholder="verbano cusio ossola" /> ,
+                            di seguito per brevità indicato come “destinatario finale del servizio di consulenza”;</li>
+                    </ul>
+                    <p>
+                        dato atto che il servizio di consulenza sotto specificato beneficia di contributo del FEASR - Misura 2 PSR 2014-2020 della Regione Toscana, il destinatario finale del servizio di consulenza, con la sottoscrizione del presente contratto, conferisce al soggetto fornitore del servizio di consulenza formale incarico per la prestazione del seguente servizio di consulenza:
+                    </p>
+                </section>
+
+                <section class="tematica">
+                    <h2>Tematica e percorso di consulenza</h2>
+                    <h3>1. Condizionalità a) Obblighi aziendali derivanti da CGO e BCAA – A</h3>
+                </section>
+
+                <section class="service">
+                    <h2>Titolo del servizio di consulenza e descrizione sintetica</h2>
+                    <h3>1. Condizionalità a) azienda mista- A</h3>
+                    <p>Il servizio di consulenza proposto è finalizzato all’individuazione, degli obblighi derivanti dall’applicazione dei criteri di gestione obbligatori (CGO) e delle norme per il mantenimento del terreno in buone condizioni agronomiche e ambientali (BCAA) del regime di condizionalità di cui agli artt.93 e 94 e a norma dell'Allegato II del Reg. UE n. 1306/2013, nonché per definire i requisiti minimi relativi all'uso dei fertilizzanti e dei prodotti fitosanitari di cui agli articoli 28 e 29 del Reg UE n. 1305/2013.</p>
+                </section>
+
+                <section>
+                    <h2>Motivazioni che rendono necessaria la consulenza</h2>
+                    <ul>
+                        <li>individuare gli obblighi aziendali per il destinatario finale del servizio di consulenza relativamente al mantenimento del rispetto dei criteri di gestione obbligatori (CGO) e (BCAA) e contestualmente rendere tali azioni compatibili con la realtà aziendale del destinatario finale oltreché essere economicamente sostenibili;</li>
+                        <li>sensibilizzare il destinatario finale nei confronti delle più complesse norme da rispettare.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>Fasi della consulenza</h2>
+                    <ol class="no-style">
+                        <li>check-up aziendale e programmazione della consulenza da svolgere;</li>
+                        <li>attività di consulenza per verificare il rispetto dei criteri di gestione obbligatori (CGO) e (BCAA) riconducibili al destinatario finale del servizio di consulenza. L’attività si svolgerà mediante visite aziendali di 2 ore di consulenza ciascuna e saranno impiegate check list di controllo;</li>
+                        <li>attività di consulenza per la verifica dei criteri di gestione obbligatori (CGO) e (BCAA). L’attività si svolgerà mediante la verifica di check list di controllo e l’elaborazione della documentazione tecnica che si è resa necessaria;</li>
+                        <li>resoconto consuntivo delle attività intraprese e della situazione finale del destinatario finale del servizio di consulenza. </li>
+                    </ol>
+                </section>
+
+                <section>
+                    <h2>Indicazione dei consulenti coinvolti</h2>
+                    <ul>
+                        <li>Per. Agr. Enrico Brugiafreddo;</li>
+                        <li>Dott. Mario Cugusi, medico veterinario.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>Risultati attesi</h2>
+                    <p>Mediante l’esperienza del consulente rappresentata dalla propria conoscenza tecnico/scientifica della materia di competenza, dall’utilizzo degli strumenti informatici ed anche dalla capacità di comunicare con l’interlocutore, sarà possibile far comprendere al destinatario finale del servizio di consulenza gli obblighi aziendali nei confronti delle CGO e BCAA e i necessari interventi da apportare nella propria azienda per rispettare le normative.</p>
+                </section>
+
+                <section>
+                    <h2>Tempi di svolgimento delle attività</h2>
+                    <p>Dal giorno 1 Marzo 2021 al giorno 1 Marzo 2022. Le attività non potranno iniziare prima delle ore 8.00 e non potranno terminare dopo le ore 18.00, esclusi i giorni festivi e prefestivi.</p>
+                </section>
+
+                <section>
+                    <h2>Ore di lavoro necessarie</h2>
+                    <p>N. 14 ore di cui n. 10 ore da svolgere in presenza del destinatario finale del servizio di consulenza.</p>
+                </section>
+
+                <section>
+                    <h2>Onere finanziario complessivo del servizio, escluso oneri di legge</h2>
+                    <p>Euro 756,00.</p>
+                </section>
+
+                <section>
+                    <h2>Onere finanziario a carico del destinatario finale del servizio di consulenza, escluso oneri di legge</h2>
+                    <p>Euro 151,20.</p>
+                </section>
+
+                <section>
+                    <h2>Modalità di pagamento</h2>
+                    <p>Vista fattura a mezzo bonifico bancario c/o BANCA CENTRO Credito Cooperativo Toscana – Umbria IBAN  IT65I0707572040000000722321.</p>
+                </section>
+
+                <section>
+                    <h2>Dichiarazioni</h2>
+                    <p>Il destinatario finale del servizio di consulenza dichiara:</p>
+                    <ul>
+                        <li>che non è stato superato il massimale di contributo FEASR per servizi di consulenza fissato in euro 4.500 nell’arco dell’intero periodo di programmazione e che, in caso di dichiarazione non veritiera, il contributo non sarà riconosciuto e dovrà egli sostenere per intero il costo dell’attività di consulenza;</li>
+                        <li>di non essere impresa in difficoltà (art. 1, co. 6 del Reg. 702/2014) e di essere in regola con le disposizioni in materia di aiuti di stato (clausola Deggendorf) e che, in caso di dichiarazione non veritiera, il contributo non sarà riconosciuto e dovrà egli sostenere per intero il costo dell’attività di consulenza.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>Varie</h2>
+                    <p>Il soggetto fornitore del servizio di consulenza garantirà la registrazione e la descrizione delle attività svolte da parte dei consulenti coinvolti nelle attività con specifica indicazione delle ore di lavoro svolte in presenza del destinatario finale. I consulenti dovranno pertanto redigere il time-sheet di riferimento, mentre il destinatario finale del servizio di consulenza dovrà attestare mediante apposita documentazione, da conservare in copia in azienda, le ore di lavoro svolte in sua presenza con la descrizione delle attività effettuate. Almeno il 30% delle attività di consulenza dovranno essere svolte in presenza del destinatario finale del singolo servizio di consulenza.</p>
+                </section>
+
+                <section>
+                    <h2>Disposizioni finali</h2>
+                    <p>Il presente contratto decorre ed ha efficacia dalla data di sua sottoscrizione da ambo le parti. Per quanto qui non esplicitamente riportato si fa riferimento a quanto previsto nel codice civile agli artt. 2222 e successivi e dalle altre disposizioni di legge che risultino applicabili. In caso di eventuali controversie legali inerente e conseguenti a quanto stabilito con il presente contratto, è competente il Foro di Siena.</p>
+                </section>
+
+                <section>
+                    <h2>Informativa e consenso al trattamento dei dati (Reg. UE n. 679/2016 “GDPR”):</h2>
+                    <p>Il destinatario finale del servizio di consulenza abilita ed autorizza espressamente il soggetto fornitore del servizio di consulenza e in ogni caso i suoi collaboratori, i dipendenti, i Professionisti o Società allo stesso collegati/e e/o quanti ne abbiano titolo, a richiedere, divulgare, consegnare, inviare, ritirare e in ogni caso ad aver accesso a richiedere e/o consegnare documentazioni e informazioni, relativi alla propria persona e/o azienda presso qualunque ufficio o ente sia pubblico che privato. L’autorizzazione viene concessa per l’espletamento dell’incarico ricevuto con la sottoscrizione del presente contratto ed estesa a tutti i dati ordinari e non di cui al Regolamento (UE) n. 679/2016 (“GDPR”).</p>
+                </section>
+
+                <section class="signatures">
+                    <p class="location">
+                        Letto, confermato e sottoscritto il <input class="fill-blank" type="text" size="15">
+                        a <input class="fill-blank" type="text" size="43"> .
+                    </p>
+
+                    <div class="signatures">
+                        <div class="conagrivet">
+                            <p>(Il soggetto fornitore del servizio di consulenza)</p>
+                            <p>p. CONAGRIVET S.r.l.</p>
+                            <p>Il Presidente del C.d.A.</p>
+                            <p>Per. Agr. Fiorenzo Belelli</p>
+                            <input class="fill-blank" type="text" />
+                        </div>
+                        <div class="recipient">
+                            <p>(Il destinatario finale del servizio di consulenza)</p>
+                            <p>TIMBRO E FIRMA</p>
+                            <input class="fill-blank" type="text" />
+                        </div>
+                    </div>
+                </section>
+
+            </article>
+        </main>
+    </body>
+</html>

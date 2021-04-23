@@ -24,11 +24,13 @@ class Activity
     /**
      * @ORM\Column(type="integer", options={"unsigned":true})
      */
+    #[Assert\Positive]
     private int $hours;
 
     /**
      * @ORM\Column(type="integer", options={"unsigned":true})
      */
+    #[Assert\PositiveOrZero]
     private int $hoursOnPremises;
 
     #[Pure]

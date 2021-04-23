@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="it-IT">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Conagrivet Contracts</title>
+    </head>
+    <body>
+        <main id="content">
+            <ul>
+                {% for recipient in recipients %}
+                {% set tax_id = recipient.vatId ?? recipient.fiscalCode %}
+                <li>
+                    <a href="{{ path('contracts_recipient', {taxId: tax_id}) }}">{{ tax_id }}</a>  {{ recipient.name }}
+                </li>
+                {% endfor %}
+            </ul>
+        </main>
+    </body>
+</html>

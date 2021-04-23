@@ -1,7 +1,7 @@
 <?php
 
 
-namespace App\Controller;
+namespace App\Controller\Api;
 
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,8 +13,6 @@ class CalendarTasksController
     #[Route('/', name: 'list')]
     public function list()
     {
-        $t = new Task();
-
         $tasks = [
             [
                 'start' => '2021-04-08T08:00:00Z',
