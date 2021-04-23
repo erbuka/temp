@@ -4,7 +4,7 @@
 namespace App\Command;
 
 
-use App\Entity\Activity;
+use App\Entity\Service;
 use App\Entity\Consultant;
 use App\Entity\Recipient;
 use Doctrine\ORM\EntityManagerInterface;
@@ -58,11 +58,11 @@ class ImportEntities extends Command
     {
         $raw = $this->rawConnection;
         $em = $this->entityManager;
-        $activitiesRepo = $em->getRepository(Activity::class);
+        $activitiesRepo = $em->getRepository(Service::class);
 
         // Bypass ORM to get a list of existing recipients used to track deleted activities
-        $tableName = $em->getClassMetadata(Activity::class)->getTableName();
-        $nameColumn = $em->getClassMetadata(Activity::class)->getColumnName('name');
+        $tableName = $em->getClassMetadata(Service::class)->getTableName();
+        $nameColumn = $em->getClassMetadata(Service::class)->getColumnName('name');
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
@@ -76,7 +76,7 @@ FROM activity
 
             $activity = $activitiesRepo->findOneBy(['name' => $name]);
             if (!$activity)
-                $activity = new Activity();
+                $activity = new Service();
 
             $activity->setName($name);
             $activity->setHours((int) $hours);
@@ -106,11 +106,11 @@ FROM activity
 
         $em->getUnitOfWork()->computeChangeSets();
 
-        /** @var Activity[] $updated */
+        /** @var Service[] $updated */
         $updated = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityUpdates());
-        /** @var Activity[] $added */
+        /** @var Service[] $added */
         $added = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityInsertions());
-        /** @var Activity[] $deleted */
+        /** @var Service[] $deleted */
         $deleted = array_map(fn($r) => $r->getName(), $em->getUnitOfWork()->getScheduledEntityDeletions());
 
         $this->output->writeln("Added activities: ". join(', ', array_values($added)));

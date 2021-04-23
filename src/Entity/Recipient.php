@@ -22,7 +22,7 @@ class Recipient
     private int $id;
 
     /**
-     * @ORM\Column(type="string", length=255, unique=true)
+     * @ORM\Column(type="string", length=150, unique=true)
      */
     #[Assert\NotBlank]
     private string $name;

@@ -16,7 +16,10 @@ trim_trailing_whitespace = false
 [*.txt]
 end_of_line = crlf
 
-[*.{ts,tsx,js,json,scss}]
+[*.json]
+indent_size = 4
+
+[*.{ts,tsx,js,jsx,css,scss}]
 indent_size = 2
 
 [*.php]

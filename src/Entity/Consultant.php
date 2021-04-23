@@ -10,18 +10,11 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * @ORM\Entity(repositoryClass=ConsultantRepository::class)
  */
-#[UniqueEntity('name')]
 class Consultant
 {
     /**
      * @ORM\Id
-     * @ORM\GeneratedValue
-     * @ORM\Column(type="integer", options={"unsigned":true})
-     */
-    private int $id;
-
-    /**
-     * @ORM\Column(type="string", length=255, unique=true)
+     * @ORM\Column(type="string", length=150)
      */
     #[Assert\NotBlank]
     private string $name;
@@ -30,11 +23,6 @@ class Consultant
      * @ORM\Column(type="string", length=255, nullable=true)
      */
     private ?string $jobTitle;
-
-    public function getId(): ?int
-    {
-        return $this->id;
-    }
 
     public function getName(): string
     {

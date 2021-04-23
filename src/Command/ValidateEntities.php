@@ -4,7 +4,7 @@
 namespace App\Command;
 
 
-use App\Entity\Activity;
+use App\Entity\Service;
 use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\ContractedService;
@@ -54,5 +54,10 @@ class ValidateEntities extends Command
         $this->input = $input;
 
         return Command::SUCCESS;
+    }
+
+    protected function checkUniqueTaxId()
+    {
+
     }
 }

@@ -36,14 +36,14 @@ class ContractedService
     private Contract $contract;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Activity::class)
+     * @ORM\ManyToOne(targetEntity=Service::class)
      * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
-    private Activity $service;
+    private Service $service;
 
     /**
      * @ORM\ManyToOne(targetEntity=Consultant::class)
-     * @ORM\JoinColumn(nullable=false)
+     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
     private Consultant $consultant;
 
@@ -64,12 +64,12 @@ class ContractedService
         return $this;
     }
 
-    public function getService(): Activity
+    public function getService(): Service
     {
         return $this->service;
     }
 
-    public function setService(Activity $service): self
+    public function setService(Service $service): self
     {
         $this->service = $service;
 

@@ -2,17 +2,17 @@
 
 namespace App\Entity;
 
-use App\Repository\ActivityRepository;
+use App\Repository\ServiceRepository;
 use Doctrine\ORM\Mapping as ORM;
 use JetBrains\PhpStorm\Pure;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 /**
- * @ORM\Entity(repositoryClass=ActivityRepository::class)
+ * @ORM\Entity(repositoryClass=ServiceRepository::class)
  */
 #[UniqueEntity('name')]
-class Activity
+class Service
 {
     /**
      * @ORM\Id

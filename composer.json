@@ -9,12 +9,15 @@
         "php": ">=8.0",
         "ext-ctype": "*",
         "ext-iconv": "*",
+        "ext-json": "*",
         "composer/package-versions-deprecated": "1.11.99.1",
         "doctrine/annotations": "^1.12",
         "doctrine/doctrine-bundle": "^2.3",
         "doctrine/doctrine-migrations-bundle": "^3.1",
         "doctrine/orm": "^2.8",
+        "google/apiclient": "^2.9",
         "nelmio/cors-bundle": "^2.1",
+        "psr/cache": "^1.0",
         "symfony/apache-pack": "^1.0",
         "symfony/asset": "5.2.*",
         "symfony/console": "5.2.*",
@@ -74,7 +77,8 @@
             "@auto-scripts"
         ],
         "post-update-cmd": [
-            "@auto-scripts"
+            "@auto-scripts",
+            "Google\\Task\\Composer::cleanup"
         ],
         "test": [
             "phplint --no-progress",
@@ -88,6 +92,9 @@
         "symfony": {
             "allow-contrib": false,
             "require": "5.2.*"
-        }
+        },
+        "google/apiclient-services": [
+            "Sheets"
+        ]
     }
 }

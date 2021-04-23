@@ -1,0 +1,10 @@
+services:
+    Google_Client:
+        class: Google_Client
+        lazy: true
+        calls:
+            - [setClientId, ['%env(GOOGLE_CLIENT_ID)%']]
+            - [setClientSecret, ['%env(GOOGLE_CLIENT_SECRET)%']]
+            - [setRedirectUri, ['%env(GOOGLE_REDIRECT_URI)%']]
+            - [setAccessType, ['offline']]
+            - [setPrompt, ['select_account consent']]
