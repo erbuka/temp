@@ -9,6 +9,7 @@ use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\ContractedService;
 use App\Entity\Recipient;
+use App\Utils;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
@@ -35,7 +36,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * Each recipient is allowed to have only 1 contract.
  * If a contract already exists, then contracted services are either added or updated.
  *
- * Each contract is identifier by its recipient.
+ * Each contract is identified by its recipient.
  *
  *
  * Sync steps:
@@ -51,7 +52,7 @@ class ImportContracts extends Command
 {
     const RAW_TABLE = 'contracted_services';
     const SHEET_COLUMNS_MAP = [
-        // DBAL named paramter => sheet column index
+        // DBAL named parameter => sheet column index
         'voce_spesa' => 0,
         'service_name' => 1,
         'recipient_name' => 2,
@@ -85,7 +86,7 @@ class ImportContracts extends Command
     {
         $this->setName('app:import-contracts');
         $this->setDescription('Loads contracts from raw dataset');
-        $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a properly formatted Google Sheet e.g. spreadsheetId/sheetId");
+        $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a Google Sheet e.g. spreadsheetId/sheetId");
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -97,8 +98,10 @@ class ImportContracts extends Command
         if ($fromSheet) {
             // Parses argument value
             [$spreadsheetId, $sheetId] = explode('/', $fromSheet);
-            assert(!empty($spreadsheetId), "Spreadsheet id is empty");
-            assert(!empty($sheetId), "Sheet id is empty");
+            if (empty($spreadsheetId) || empty($sheetId)) {
+                $output->writeln("<error>Missing spreadsheet or sheet id from '{$fromSheet}'</error>");
+                return Command::FAILURE;
+            }
 
             $this->importSheetData($spreadsheetId, $sheetId);
         }
@@ -123,7 +126,7 @@ WHERE recipient = :recipient
                 $contract = new Contract();
             }
 
-//            $contract->setRecipient($recipient);
+            $contract->setRecipient($recipient);
             $this->entityManager->persist($contract);
 
             // Ideally we flush after the contract
@@ -146,7 +149,8 @@ WHERE recipient = :recipient
                     $cs->setService($service);
                     $cs->setConsultant($consultant);
                     $this->entityManager->persist($cs);
-                    $contract->addContractedService($cs);
+
+                    $contract->addContractedService($cs); // calls $cs->setContract($contract)
 
                     $this->entityManager->flush();
                     $query = $this->entityManager->createQuery("SELECT cs FROM ". ContractedService::class ." cs");
@@ -156,9 +160,15 @@ WHERE recipient = :recipient
                     $output->writeln("Duplicated contracted service: recipient='{$recipient->getName()}', service='{$service->getName()}', consultant='{$consultant->getName()}'");
                 }
 
+                $errors = $this->validator->validate($contractedService);
+                if (count($errors) > 0) throw new \Exception("Cannot validate ContractedService {$contract->getRecipient()->getName()}({$contractedService->getService()}, {$contractedService->getConsultant()}): ". $errors);
+
                 // Move flushes outside the loop, but use DQL to get existing ContractedService's which are not yet flushed.
 //                $this->entityManager->flush();
             }
+
+            $errors = $this->validator->validate($contract);
+            if (count($errors) > 0) throw new \Exception("Cannot validate Contract {$contract->getRecipient()->getName()}: ". $errors);
 
             // fetch raw contracted services: Array<(service, consultant, hours)>
             // throw if the recipient has already contracted (service, consultant)
@@ -210,7 +220,8 @@ FROM company_consultant_activity
 
     protected function importSheetData(string $spreadsheetId, string $sheetId)
     {
-        $this->authorizeSheetsClient();
+        Utils::authorizeSheetsClient($this->sheetsClient, $this->cacheDir, $this, $this->input, $this->output);
+//        $this->authorizeSheetsClient();
 
         $sheetColumnsMap = static::SHEET_COLUMNS_MAP;
 
@@ -230,7 +241,7 @@ FROM company_consultant_activity
         $sheetRows = $service->spreadsheets_values->get($spreadsheetId, "'{$sheetTitle}'")->getValues();
         array_shift($sheetRows);
 
-        static::truncateTable($this->rawConnection, static::RAW_TABLE);
+        Utils::truncateTable($this->rawConnection, static::RAW_TABLE);
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
@@ -250,56 +261,5 @@ INSERT INTO ".static::RAW_TABLE."
 
             assert($insert->executeStatement() > 0, "Affected rows < 0");
         }
-    }
-
-    protected function authorizeSheetsClient()
-    {
-        $questioner = $this->getHelper('question');
-        $tokenPath = "{$this->cacheDir}/google_api_token.json";
-
-        $this->sheetsClient->setApplicationName('Gestionale CONAGRIVET');
-        $this->sheetsClient->setScopes(\Google_Service_Sheets::SPREADSHEETS_READONLY);
-
-        // Tries to load access token from cache
-        if (file_exists($tokenPath)) {
-            $accessToken = json_decode(file_get_contents($tokenPath), true);
-            $this->sheetsClient->setAccessToken($accessToken);
-        }
-
-        // If there is no previous token or it's expired.
-        if ($this->sheetsClient->isAccessTokenExpired()) {
-            // Refresh the token if possible, else fetch a new one.
-            if ($this->sheetsClient->getRefreshToken()) {
-                $this->sheetsClient->fetchAccessTokenWithRefreshToken($this->sheetsClient->getRefreshToken());
-            } else {
-                // Request authorization from the user.
-                $authUrl = $this->sheetsClient->createAuthUrl();
-                $this->output->writeln("Visit <info>{$authUrl}</info>");
-
-                $authCode = $questioner->ask($this->input, $this->output, new Question('Enter the verification code: '));
-
-                // Exchange authorization code for an access token.
-                $accessToken = $this->sheetsClient->fetchAccessTokenWithAuthCode($authCode);
-                $this->sheetsClient->setAccessToken($accessToken);
-
-                // Check to see if there was an error.
-                if (array_key_exists('error', $accessToken)) {
-                    throw new \Exception(join(', ', $accessToken));
-                }
-            }
-
-            // Caches the token.
-            if (!file_exists(dirname($tokenPath))) {
-                mkdir(dirname($tokenPath), 0700, true);
-            }
-            file_put_contents($tokenPath, json_encode($this->sheetsClient->getAccessToken()));
-        }
-    }
-
-    public static function truncateTable(Connection $connection, string $table)
-    {
-        $platform = $connection->getDatabasePlatform();
-        $sql = $platform->getTruncateTableSQL($table, false);
-        $connection->executeStatement($sql);
     }
 }

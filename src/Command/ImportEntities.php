@@ -19,27 +19,31 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 class ImportEntities extends Command
 {
-    protected static $defaultName = 'app:import-entities';
-
     protected EntityManagerInterface $entityManager;
     protected Connection $rawConnection;
     protected ValidatorInterface $validator;
     protected OutputInterface $output;
     protected InputInterface $input;
+    protected \Google_Client $sheetsClient;
+    protected string $cacheDir;
 
-    public function __construct(EntityManagerInterface $entityManager, Connection $rawConnection, ValidatorInterface $validator)
+    public function __construct(EntityManagerInterface $entityManager, Connection $rawConnection, ValidatorInterface $validator, \Google_Client $sheetsClient, string $cacheDir)
     {
         $this->entityManager = $entityManager;
         $this->rawConnection = $rawConnection;
         $this->validator = $validator;
+        $this->sheetsClient = $sheetsClient;
+        $this->cacheDir = $cacheDir;
 
         parent::__construct();
     }
 
     protected function configure()
     {
+        $this->setName('app:import-entities');
         $this->setDescription('Loads activity codification from raw dataset');
         $this->addOption('delete', null,InputOption::VALUE_OPTIONAL, "Deletes entities not present in the raw database", false);
+        $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a Google Sheet e.g. spreadsheetId/sheetId");
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -47,9 +51,9 @@ class ImportEntities extends Command
         $this->output = $output;
         $this->input = $input;
 
-        $this->loadActivities();
-        $this->loadConsultants();
         $this->loadRecipients();
+        $this->loadConsultants();
+//        $this->loadActivities();
 
         return Command::SUCCESS;
     }
