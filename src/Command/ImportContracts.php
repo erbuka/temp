@@ -9,8 +9,10 @@ use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\ContractedService;
 use App\Entity\Recipient;
+use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
+use JetBrains\PhpStorm\Deprecated;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -22,14 +24,19 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  * Class ImportContracts
  * @package App\Command
  *
+ * Reads tabular data from a table in the raw DBAL connection, optionally populating the table from a Google Sheet.
+ *
+ * PREREQUISITES:
+ *  - Recipient entities already imported
+ *  - Service entities already imported
+ *  - Consultant entities already imported
+ *
+ * NOTES:
  * Each recipient is allowed to have only 1 contract.
  * If a contract already exists, then contracted services are either added or updated.
  *
  * Each contract is identifier by its recipient.
  *
- * Data sources:
- *   - Google Sheet
- *   - DB Table
  *
  * Sync steps:
  *  1. Copy data to the raw database from the Google Sheet, row by row.
@@ -42,7 +49,18 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 class ImportContracts extends Command
 {
-    protected static $defaultName = 'app:import-contracts';
+    const RAW_TABLE = 'contracted_services';
+    const SHEET_COLUMNS_MAP = [
+        // DBAL named paramter => sheet column index
+        'voce_spesa' => 0,
+        'service_name' => 1,
+        'recipient_name' => 2,
+        'recipient_taxid' => 3,
+        'hours' => 5,
+        'amount_eur' => 6,
+        'consultant_name' => 7,
+        'notes' => 9
+    ];
 
     protected EntityManagerInterface $entityManager;
     protected Connection $rawConnection;
@@ -65,8 +83,9 @@ class ImportContracts extends Command
 
     protected function configure()
     {
+        $this->setName('app:import-contracts');
         $this->setDescription('Loads contracts from raw dataset');
-        $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a properly formatted Google Sheet");
+        $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a properly formatted Google Sheet e.g. spreadsheetId/sheetId");
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
@@ -76,18 +95,21 @@ class ImportContracts extends Command
 
         $fromSheet = $input->getOption('from-sheet');
         if ($fromSheet) {
-            $this->importSheetData($fromSheet);
-            return Command::SUCCESS;
+            // Parses argument value
+            [$spreadsheetId, $sheetId] = explode('/', $fromSheet);
+            assert(!empty($spreadsheetId), "Spreadsheet id is empty");
+            assert(!empty($sheetId), "Sheet id is empty");
 
+            $this->importSheetData($spreadsheetId, $sheetId);
         }
 
-        $sql = "
-SELECT TRIM(activity_type) as service, hours, amount_eur, TRIM(consultant) as consultant
-FROM company_consultant_activity
-WHERE `company` = :company
-        ";
+        $contractedServicesQuery = $this->rawConnection->prepare("
+SELECT service, hours, amount_eur, consultant
+FROM ".static::RAW_TABLE."
+WHERE recipient = :recipient
+");
 
-        foreach ($this->getRecipients() as $recipient) {
+        foreach ($this->entityManager->getRepository(Recipient::class)->findAll() as $recipient) {
             /** @var $recipient Recipient */
 //            $this->output->writeln('Recipient:'. $recipient->getName());
 
@@ -101,12 +123,13 @@ WHERE `company` = :company
                 $contract = new Contract();
             }
 
-            $contract->setRecipient($recipient);
+//            $contract->setRecipient($recipient);
             $this->entityManager->persist($contract);
 
             // Ideally we flush after the contract
+            $contractedServicesQuery->bindValue('recipient', $recipient->getName());
 
-            foreach ($this->rawConnection->executeQuery($sql, ['company' => $recipient->getName()])->iterateAssociative() as ['service' => $serviceName, 'hours' => $hours, 'consultant' => $consultantName]) {
+            foreach ($contractedServicesQuery->executeQuery()->iterateAssociative() as ['service' => $serviceName, 'hours' => $hours, 'consultant' => $consultantName]) {
                 // TODO if contracted (service, consultant) already exists, update it (hours?)
 
                 /** @var Service $service */
@@ -185,27 +208,59 @@ FROM company_consultant_activity
         }
     }
 
-    protected function importSheetData(string $sheetId)
+    protected function importSheetData(string $spreadsheetId, string $sheetId)
     {
         $this->authorizeSheetsClient();
 
-        $service = new \Google_Service_Sheets($this->sheetsClient);
-        $resp = $service->spreadsheets_values->get($sheetId, 'A1:D10');
-        $values = $resp->getValues();
+        $sheetColumnsMap = static::SHEET_COLUMNS_MAP;
 
-        dump($values);
+        // Determines sheet name to be used in A1 notation
+        $service = new \Google_Service_Sheets($this->sheetsClient);
+        $sheets = $service->spreadsheets->get($spreadsheetId)->getSheets();
+        foreach ($sheets as $sheet) {
+            if ($sheet->getProperties()->getSheetId() == $sheetId) {
+                $sheetTitle = $sheet->getProperties()->getTitle();
+                break;
+            }
+        }
+
+        if (empty($sheetTitle))
+            throw new \Exception("Sheet '{$sheetId}' does not exist in spreadsheet '{$spreadsheetId}'");
+
+        $sheetRows = $service->spreadsheets_values->get($spreadsheetId, "'{$sheetTitle}'")->getValues();
+        array_shift($sheetRows);
+
+        static::truncateTable($this->rawConnection, static::RAW_TABLE);
+
+        $insert = $this->rawConnection->prepare("
+INSERT INTO ".static::RAW_TABLE."
+    (service, recipient, recipient_taxid, hours, amount_eur, consultant, voce_spesa, notes)
+    VALUES (:service_name, :recipient_name, :recipient_taxid, :hours, :amount_eur, :consultant_name, :voce_spesa, :notes)
+");
+
+        foreach ($sheetRows as $row) {
+            $insert->bindValue($name = 'service_name', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'recipient_name', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'recipient_taxid', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'hours', $row[$sheetColumnsMap[$name]], ParameterType::INTEGER);
+            $insert->bindValue($name = 'amount_eur', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'consultant_name', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'voce_spesa', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'notes', $row[$sheetColumnsMap[$name]] ?? '');
+
+            assert($insert->executeStatement() > 0, "Affected rows < 0");
+        }
     }
 
     protected function authorizeSheetsClient()
     {
         $questioner = $this->getHelper('question');
-
         $tokenPath = "{$this->cacheDir}/google_api_token.json";
 
         $this->sheetsClient->setApplicationName('Gestionale CONAGRIVET');
         $this->sheetsClient->setScopes(\Google_Service_Sheets::SPREADSHEETS_READONLY);
 
-
+        // Tries to load access token from cache
         if (file_exists($tokenPath)) {
             $accessToken = json_decode(file_get_contents($tokenPath), true);
             $this->sheetsClient->setAccessToken($accessToken);
@@ -233,11 +288,18 @@ FROM company_consultant_activity
                 }
             }
 
-            // Save the token to a file.
+            // Caches the token.
             if (!file_exists(dirname($tokenPath))) {
                 mkdir(dirname($tokenPath), 0700, true);
             }
             file_put_contents($tokenPath, json_encode($this->sheetsClient->getAccessToken()));
         }
+    }
+
+    public static function truncateTable(Connection $connection, string $table)
+    {
+        $platform = $connection->getDatabasePlatform();
+        $sql = $platform->getTruncateTableSQL($table, false);
+        $connection->executeStatement($sql);
     }
 }
