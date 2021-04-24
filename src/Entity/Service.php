@@ -4,7 +4,6 @@ namespace App\Entity;
 
 use App\Repository\ServiceRepository;
 use Doctrine\ORM\Mapping as ORM;
-use JetBrains\PhpStorm\Pure;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
@@ -22,18 +21,44 @@ class Service
     private string $name;
 
     /**
-     * @ORM\Column(type="integer", options={"unsigned":true})
+     * @ORM\Column(type="smallint", options={"unsigned":true})
      */
     #[Assert\Positive]
     private int $hours;
 
     /**
-     * @ORM\Column(type="integer", options={"unsigned":true})
+     * @ORM\Column(type="smallint", options={"unsigned":true})
      */
     #[Assert\PositiveOrZero]
     private int $hoursOnPremises;
 
-    #[Pure]
+    /**
+     * @ORM\Column(type="text", nullable=true)
+     */
+    private ?string $description;
+
+    /**
+     * @ORM\Column(type="text", nullable=true)
+     */
+    private ?string $category;
+
+    /**
+     * @ORM\Column(type="array", nullable=true)
+     */
+//    #[Assert\NotBlank(message: 'Service steps must be defined')]
+    private ?array $steps = [];
+
+    /**
+     * @ORM\Column(type="array", nullable=true)
+     */
+//    #[Assert\NotBlank(message: 'Service reasons must be defined')]
+    private ?array $reasons = [];
+
+    /**
+     * @ORM\Column(type="text", nullable=true)
+     */
+    private ?string $expectations;
+
     public function getName(): string
     {
         return $this->name;
@@ -46,7 +71,6 @@ class Service
         return $this;
     }
 
-    #[Pure]
     public function getHours(): int
     {
         return $this->hours;
@@ -59,7 +83,6 @@ class Service
         return $this;
     }
 
-    #[Pure]
     public function getHoursOnPremises(): int
     {
         return $this->hoursOnPremises;
@@ -72,9 +95,69 @@ class Service
         return $this;
     }
 
-    #[Pure]
+    #[Assert\Expression("value == (this.getHours() - this.getHoursOnPremises())", message: 'Remote hours added to on-premises does not match total hours')]
     public function getHoursRemote(): int
     {
         return $this->hours - $this->getHoursOnPremises();
+    }
+
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function setDescription(?string $description): self
+    {
+        $this->description = $description;
+
+        return $this;
+    }
+
+    public function getCategory(): ?string
+    {
+        return $this->category;
+    }
+
+    public function setCategory(?string $category): self
+    {
+        $this->category = $category;
+
+        return $this;
+    }
+
+    public function getSteps(): ?array
+    {
+        return $this->steps;
+    }
+
+    public function setSteps(?array $steps): self
+    {
+        $this->steps = $steps;
+
+        return $this;
+    }
+
+    public function getReasons(): array
+    {
+        return $this->reasons;
+    }
+
+    public function setReasons(?array $reasons): self
+    {
+        $this->reasons = $reasons;
+
+        return $this;
+    }
+
+    public function getExpectations(): string
+    {
+        return $this->expectations;
+    }
+
+    public function setExpectations(?string $expectations): self
+    {
+        $this->expectations = $expectations;
+
+        return $this;
     }
 }

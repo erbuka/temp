@@ -19,14 +19,21 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-class ImportConsultants extends Command
+class ImportServices extends Command
 {
-    const RAW_TABLE = 'consultant';
+    const RAW_TABLE = 'services';
     const SHEET_COLUMNS_MAP = [
         // DBAL named parameter => sheet column index
         'name' => 0,
-        'title' => 1,
-        'job_title' => 2,
+        'category' => 1,
+        'ab' => 2,
+        'description' => 3,
+        'reasons' => 4,
+        'steps' => 5,
+        'expectations' => 6,
+        'hours' => 7,
+        'hours_onpremises' => 8,
+        'hours_remote' => 9,
     ];
 
     protected EntityManagerInterface $entityManager;
@@ -50,7 +57,7 @@ class ImportConsultants extends Command
 
     protected function configure()
     {
-        $this->setName('app:import-consultants');
+        $this->setName('app:import-services');
         $this->setDescription('Loads consultants from raw dataset');
         $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a Google Sheet e.g. spreadsheetId/sheetId");
         $this->addOption('delete', null,InputOption::VALUE_OPTIONAL, "Deletes entities not present in the raw database", false);
@@ -75,61 +82,79 @@ class ImportConsultants extends Command
 
         $raw = $this->rawConnection;
         $em = $this->entityManager;
-        $consultantsRepository = $em->getRepository(Consultant::class);
+        $servicesRepository = $em->getRepository(Service::class);
 
         // Bypass ORM to get a list of existing recipients
-        $tableName = $em->getClassMetadata(Consultant::class)->getTableName();
-        $nameColumn = $em->getClassMetadata(Consultant::class)->getColumnName('name');
+        $tableName = $em->getClassMetadata(Service::class)->getTableName();
+        $nameColumn = $em->getClassMetadata(Service::class)->getColumnName('name');
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT TRIM(name) as `name`, title, job as job_title
+SELECT TRIM(name) as name, hours, hours_onpremises, hours_remote, description, category, reasons, expectations, steps
 FROM ".static::RAW_TABLE."
 ";
 
-        foreach ($raw->executeQuery($sql)->iterateAssociative() as ['name' => $name, 'title' => $title, 'job_title' => $jobTitle]) {
-            $consultant = $consultantsRepository->findOneBy(['name' => $name]);
-            if (!$consultant)
-                $consultant = new Consultant();
+        foreach ($raw->executeQuery($sql)->iterateAssociative() as [
+            'name' => $name,
+            'hours' => $hours,
+            'hours_onpremises' => $hoursOnPremises,
+            'hours_remote' => $hoursRemote,
+            'description' => $description,
+            'category' => $category,
+            'reasons' => $reasons,
+            'expectations' => $expectations,
+            'steps' => $steps
+        ]) {
+            if (intval($hours) !== (intval($hoursOnPremises) + intval($hoursRemote)))
+                throw new \Exception("Total hours does not equal the sum or remote and on-premises for {$name}");
 
-            $consultant->setName($name);
-            $consultant->setTitle(trim($title));
-            $consultant->setJobTitle(trim($jobTitle));
+            $service = $servicesRepository->findOneBy(['name' => $name]);
+            if (!$service)
+                $service = new Service();
 
-            $errors = $this->validator->validate($consultant);
-            if (count($errors) > 0) throw new \Exception("Cannot validate Consultant {$consultant->getName()}: ". $errors);
+            $service->setName($name);
+            $service->setDescription(trim($description));
+            $service->setCategory(trim($category));
+            $service->setHours(intval($hours));
+            $service->setHoursOnPremises(intval($hoursOnPremises));
+            $service->setReasons(static::textListToArray($reasons));
+            $service->setExpectations(trim($expectations));
+            $service->setSteps(static::textListToArray($steps));
 
-            $em->persist($consultant);
-            if (array_key_exists($consultant->getName(), $deleted))
-                unset($deleted[$consultant->getName()]);
+            $errors = $this->validator->validate($service);
+            if (count($errors) > 0) throw new \Exception("Cannot validate Service {$service->getName()}: ". $errors);
+
+            $em->persist($service);
+            if (array_key_exists($service->getName(), $deleted))
+                unset($deleted[$service->getName()]);
         }
 
         if (false !== $this->input->getOption('delete')) {
             foreach ($deleted as $name => $_) {
-                $c = $consultantsRepository->findOneBy(['name' => $name]);
+                $c = $servicesRepository->findOneBy(['name' => $name]);
                 if ($c) {
-                    $question = new ConfirmationQuestion("<question>Delete consultant '{$c->getName()}' ?</question> [no]", false);
+                    $question = new ConfirmationQuestion("<question>Delete service '{$c->getName()}' ?</question> [no]", false);
                     if ($this->getHelper('question')->ask($this->input, $this->output, $question)) {
                         $em->remove($c);
                     }
                 }
             }
         } else {
-            $this->output->writeln("<info>MISSING (removed?) Consultants:</info>: ". join(', ', array_keys($deleted)));
+            $this->output->writeln("<info>MISSING (removed?) Services:</info>: ". join(', ', array_keys($deleted)));
         }
 
         $em->getUnitOfWork()->computeChangeSets();
 
-        /** @var Consultant[] $updated */
+        /** @var Service[] $updated */
         $updated = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityUpdates());
-        /** @var Consultant[] $added */
+        /** @var Service[] $added */
         $added = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityInsertions());
-        /** @var Consultant[] $deleted */
+        /** @var Service[] $deleted */
         $deleted = array_map(fn($r) => $r->getName(), $em->getUnitOfWork()->getScheduledEntityDeletions());
 
-        $this->output->writeln("Added consultants: ". join(', ', array_values($added)));
-        $this->output->writeln("Updated consultants: ". join(', ', array_values($updated)));
-        $this->output->writeln("<info>DELETED consultants</info>: ". join(', ', array_values($deleted)));
+        $this->output->writeln("Added services: ". join(', ', array_values($added)));
+        $this->output->writeln("Updated services: ". join(', ', array_values($updated)));
+        $this->output->writeln("<info>DELETED services</info>: ". join(', ', array_values($deleted)));
 
         $em->flush();
 
@@ -153,16 +178,35 @@ FROM ".static::RAW_TABLE."
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
-(name, title, job)
-VALUES (:name, :title, :job_title)
+(name, category, ab, hours, hours_onpremises, hours_remote, description, reasons, expectations, steps)
+VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :description, :reasons, :expectations, :steps)
 ");
 
         foreach ($sheetRows as $row) {
             $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'category', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'ab', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'hours', $row[$sheetColumnsMap[$name]], ParameterType::INTEGER);
+            $insert->bindValue($name = 'hours_onpremises', $row[$sheetColumnsMap[$name]], ParameterType::INTEGER);
+            $insert->bindValue($name = 'hours_remote', $row[$sheetColumnsMap[$name]], ParameterType::INTEGER);
+            $insert->bindValue($name = 'description', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'reasons', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'expectations', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'steps', $row[$sheetColumnsMap[$name]]);
 
             assert($insert->executeStatement() > 0, "Affected rows <= 0");
         }
+    }
+
+    private static function textListToArray(string $list): array
+    {
+        $items = [];
+        foreach (explode('**', $list) as &$item) {
+            $item = trim($item, ",;. \n\r\t\v\0");
+            if (!empty($item))
+                $items[] = $item;
+        }
+
+        return $items;
     }
 }

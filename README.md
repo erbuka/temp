@@ -30,4 +30,5 @@ must be performed. When entities are created/updated programmatically, the Valid
 ## CLI
 - `bin/console app:import-recipients --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/599080703`
 - `bin/console app:import-consultants --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/245445236`
+- `bin/console app:import-services --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/1739363178`
 - `bin/console app:import-contracts --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/1659309557` 

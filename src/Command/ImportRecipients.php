@@ -83,7 +83,7 @@ class ImportRecipients extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT name, taxid, headquarters
+SELECT TRIM(`name`) as `name`, TRIM(taxid) as taxid, headquarters
 FROM ".static::RAW_TABLE."
 ";
 
@@ -98,7 +98,7 @@ FROM ".static::RAW_TABLE."
                 $recipient->setVatId($taxId);
 
             $recipient->setName($name);
-            $recipient->setHeadquarters($address);
+            $recipient->setHeadquarters(trim($address));
 
             $errors = $this->validator->validate($recipient);
             if (count($errors) > 0) throw new \Exception("Cannot validate Recipient {$recipient->getName()}: ". $errors);
@@ -162,9 +162,9 @@ VALUES (:taxid, :name, :headquarters)
 ");
 
         foreach ($sheetRows as $row) {
-            $insert->bindValue($name = 'taxid', trim($row[$sheetColumnsMap[$name]]));
-            $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
-            $insert->bindValue($name = 'headquarters', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'taxid', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'headquarters', $row[$sheetColumnsMap[$name]]);
 
             assert($insert->executeStatement() > 0, "Affected rows <= 0");
         }

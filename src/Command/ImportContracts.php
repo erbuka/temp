@@ -145,16 +145,16 @@ WHERE recipient = :recipient
 
                 $contractedService = $this->entityManager->getRepository(ContractedService::class)->findOneBy(['contract' => $contract, 'service' => $service, 'consultant' => $consultant]);
                 if (!$contractedService) {
-                    $cs = new ContractedService();
-                    $cs->setService($service);
-                    $cs->setConsultant($consultant);
-                    $this->entityManager->persist($cs);
+                    $contractedService = new ContractedService();
+                    $contractedService->setService($service);
+                    $contractedService->setConsultant($consultant);
+                    $this->entityManager->persist($contractedService);
 
-                    $contract->addContractedService($cs); // calls $cs->setContract($contract)
+                    $contract->addContractedService($contractedService); // calls $cs->setContract($contract)
 
                     $this->entityManager->flush();
-                    $query = $this->entityManager->createQuery("SELECT cs FROM ". ContractedService::class ." cs");
-                    $res = $query->getResult();
+//                    $query = $this->entityManager->createQuery("SELECT cs FROM ". ContractedService::class ." cs");
+//                    $res = $query->getResult();
                 } else {
                     // TODO throw if recipient has already contracted (service, consultant)
                     $output->writeln("Duplicated contracted service: recipient='{$recipient->getName()}', service='{$service->getName()}', consultant='{$consultant->getName()}'");
