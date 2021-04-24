@@ -20,6 +20,11 @@ class Consultant
     private string $name;
 
     /**
+     * @ORM\Column(type="string", length=50, nullable=true)
+     */
+    private ?string $title;
+
+    /**
      * @ORM\Column(type="string", length=255, nullable=true)
      */
     private ?string $jobTitle;
@@ -32,6 +37,18 @@ class Consultant
     public function setName(string $name): self
     {
         $this->name = $name;
+
+        return $this;
+    }
+
+    public function getTitle(): ?string
+    {
+        return $this->title;
+    }
+
+    public function setTitle(?string $title): self
+    {
+        $this->title = $title;
 
         return $this;
     }

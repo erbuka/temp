@@ -19,14 +19,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-class ImportRecipients extends Command
+class ImportConsultants extends Command
 {
-    const RAW_TABLE = 'recipient';
+    const RAW_TABLE = 'consultant';
     const SHEET_COLUMNS_MAP = [
         // DBAL named parameter => sheet column index
         'name' => 0,
-        'taxid' => 1,
-        'headquarters' => 2,
+        'title' => 1,
+        'job_title' => 2,
     ];
 
     protected EntityManagerInterface $entityManager;
@@ -50,8 +50,8 @@ class ImportRecipients extends Command
 
     protected function configure()
     {
-        $this->setName('app:import-recipients');
-        $this->setDescription('Loads recipients from raw dataset');
+        $this->setName('app:import-consultants');
+        $this->setDescription('Loads consultants from raw dataset');
         $this->addOption('from-sheet', null,InputOption::VALUE_REQUIRED, "Imports data from a Google Sheet e.g. spreadsheetId/sheetId");
         $this->addOption('delete', null,InputOption::VALUE_OPTIONAL, "Deletes entities not present in the raw database", false);
     }
@@ -75,65 +75,61 @@ class ImportRecipients extends Command
 
         $raw = $this->rawConnection;
         $em = $this->entityManager;
-        $recipientRepository = $em->getRepository(Recipient::class);
+        $consultantsRepository = $em->getRepository(Consultant::class);
 
-        // Get a list of existing recipient names to detect removed ones
-        $tableName = $em->getClassMetadata(Recipient::class)->getTableName();
-        $nameColumn = $em->getClassMetadata(Recipient::class)->getColumnName('name');
+        // Bypass ORM to get a list of existing recipients
+        $tableName = $em->getClassMetadata(Consultant::class)->getTableName();
+        $nameColumn = $em->getClassMetadata(Consultant::class)->getColumnName('name');
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT name, taxid, headquarters
+SELECT name, title, job as job_title
 FROM ".static::RAW_TABLE."
 ";
 
-        foreach ($raw->executeQuery($sql)->iterateAssociative() as ['name' => $name, 'taxid' => $taxId, 'headquarters' => $address]) {
-            $recipient = $recipientRepository->findOneByTaxId($taxId);
-            if (!$recipient)
-                $recipient = new Recipient();
+        foreach ($raw->executeQuery($sql)->iterateAssociative() as ['name' => $name, 'title' => $title, 'job_title' => $jobTitle]) {
+            $consultant = $consultantsRepository->findOneBy(['name' => $name]);
+            if (!$consultant)
+                $consultant = new Consultant();
 
-            if (strlen($taxId) == 16) {
-                $recipient->setFiscalCode($taxId);
-            } else
-                $recipient->setVatId($taxId);
+            $consultant->setName($name);
+            $consultant->setTitle($title);
+            $consultant->setJobTitle($jobTitle);
 
-            $recipient->setName($name);
-            $recipient->setHeadquarters($address);
+            $errors = $this->validator->validate($consultant);
+            if (count($errors) > 0) throw new \Exception("Cannot validate Consultant {$consultant->getName()}: ". $errors);
 
-            $errors = $this->validator->validate($recipient);
-            if (count($errors) > 0) throw new \Exception("Cannot validate Recipient {$recipient->getName()}: ". $errors);
-
-            $em->persist($recipient);
-            if (array_key_exists($recipient->getName(), $deleted))
-                unset($deleted[$recipient->getName()]);
+            $em->persist($consultant);
+            if (array_key_exists($consultant->getName(), $deleted))
+                unset($deleted[$consultant->getName()]);
         }
 
         if (false !== $this->input->getOption('delete')) {
             foreach ($deleted as $name => $_) {
-                $r = $recipientRepository->findOneBy(['name' => $name]);
-                if ($r) {
-                    $question = new ConfirmationQuestion("<question>Delete recipient '{$r->getName()}' ?</question> [no]", false);
+                $c = $consultantsRepository->findOneBy(['name' => $name]);
+                if ($c) {
+                    $question = new ConfirmationQuestion("<question>Delete consultant '{$c->getName()}' ?</question> [no]", false);
                     if ($this->getHelper('question')->ask($this->input, $this->output, $question)) {
-                        $em->remove($r);
+                        $em->remove($c);
                     }
                 }
             }
         } else {
-            $this->output->writeln("<info>MISSING (removed?) Recipients:</info>: ". join(', ', array_keys($deleted)));
+            $this->output->writeln("<info>MISSING (removed?) Consultants:</info>: ". join(', ', array_keys($deleted)));
         }
 
         $em->getUnitOfWork()->computeChangeSets();
 
-        /** @var Recipient[] $updated */
-        $updated = array_map(fn($r) => $r->getName(), $em->getUnitOfWork()->getScheduledEntityUpdates());
-        /** @var Recipient[] $added */
-        $added = array_map(fn($r) => $r->getName(), $em->getUnitOfWork()->getScheduledEntityInsertions());
-        /** @var Recipient[] $deleted */
+        /** @var Consultant[] $updated */
+        $updated = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityUpdates());
+        /** @var Consultant[] $added */
+        $added = array_map(fn($c) => $c->getName(), $em->getUnitOfWork()->getScheduledEntityInsertions());
+        /** @var Consultant[] $deleted */
         $deleted = array_map(fn($r) => $r->getName(), $em->getUnitOfWork()->getScheduledEntityDeletions());
 
-        $this->output->writeln("ADDED Recipients: ". join(', ', array_values($added)));
-        $this->output->writeln("UPDATED Recipients: ". join(', ', array_values($updated)));
-        $this->output->writeln("<info>DELETED Recipients</info>: ". join(', ', array_values($deleted)));
+        $this->output->writeln("Added consultants: ". join(', ', array_values($added)));
+        $this->output->writeln("Updated consultants: ". join(', ', array_values($updated)));
+        $this->output->writeln("<info>DELETED consultants</info>: ". join(', ', array_values($deleted)));
 
         $em->flush();
 
@@ -157,14 +153,14 @@ FROM ".static::RAW_TABLE."
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
-(taxid, name, headquarters)
-VALUES (:taxid, :name, :headquarters)
+(name, title, job)
+VALUES (:name, :title, :job_title)
 ");
 
         foreach ($sheetRows as $row) {
-            $insert->bindValue($name = 'taxid', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
-            $insert->bindValue($name = 'headquarters', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'title', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'job_title', trim($row[$sheetColumnsMap[$name]]));
 
             assert($insert->executeStatement() > 0, "Affected rows <= 0");
         }
