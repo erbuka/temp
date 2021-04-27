@@ -166,7 +166,7 @@ VALUES (:taxid, :name, :headquarters)
             $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'headquarters', $row[$sheetColumnsMap[$name]]);
 
-            assert($insert->executeStatement() > 0, "Affected rows <= 0");
+            $insert->executeStatement();
         }
     }
 }

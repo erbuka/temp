@@ -194,7 +194,7 @@ VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :descri
             $insert->bindValue($name = 'expectations', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'steps', $row[$sheetColumnsMap[$name]]);
 
-            assert($insert->executeStatement() > 0, "Affected rows <= 0");
+            $insert->executeStatement();
         }
     }
 

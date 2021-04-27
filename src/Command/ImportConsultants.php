@@ -162,7 +162,7 @@ VALUES (:name, :title, :job_title)
             $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]]);
 
-            assert($insert->executeStatement() > 0, "Affected rows <= 0");
+            $insert->executeStatement();
         }
     }
 }

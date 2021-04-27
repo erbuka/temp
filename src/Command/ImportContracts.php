@@ -259,7 +259,7 @@ INSERT INTO ".static::RAW_TABLE."
             $insert->bindValue($name = 'voce_spesa', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'notes', $row[$sheetColumnsMap[$name]] ?? '');
 
-            assert($insert->executeStatement() > 0, "Affected rows < 0");
+            $insert->executeStatement();
         }
     }
 }
