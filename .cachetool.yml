@@ -1,0 +1,2 @@
+adapter: fastcgi
+fastcgi: /var/run/php/fpm8.0-gestionale.sock
