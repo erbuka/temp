@@ -64,9 +64,3 @@ DirectoryIndex index.php
         # RedirectTemp cannot be used instead
     </IfModule>
 </IfModule>
-
-AuthName "Gestionale Conagrivet S.r.l."
-AuthType Basic
-AuthBasicProvider file
-AuthUserFile /var/www/vhosts/gestionale/www/public/.htpasswd
-Require valid-user

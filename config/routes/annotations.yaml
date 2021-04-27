@@ -9,7 +9,7 @@ frontend:
     # '*' avoids recurse inside subdirectories
     resource: ../../src/Controller/*
     type: annotation
-    stateless: true
+    stateless: false
 
 kernel:
     resource: ../../src/Kernel.php
