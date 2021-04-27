@@ -32,3 +32,8 @@ must be performed. When entities are created/updated programmatically, the Valid
 - `bin/console app:import-consultants --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/245445236`
 - `bin/console app:import-services --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/1739363178`
 - `bin/console app:import-contracts --from-sheet=1Gc2DLrdOpnH9hQPI2eaqsB9lkFpVsF6krU_cLcJO5Bw/1659309557` 
+
+
+## Deployment
+- `./composer.phar dump-autoload --no-dev --classmap-authoritative`
+- `./composer.phar dump-env prod`. Note that real environment variables always win over ones declared in .env files.

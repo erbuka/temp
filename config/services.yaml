@@ -5,6 +5,7 @@
 # https://symfony.com/doc/current/best_practices/configuration.html#application-related-configuration
 parameters:
     cache_dir: '%kernel.cache_dir%'
+    container.dumper.inline_factories: true
 
 services:
     # default configuration for services in *this* file
