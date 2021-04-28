@@ -63,6 +63,10 @@ class Service
     {
         return $this->name;
     }
+    public function getNameWithoutPrefix(): ?string
+    {
+        return preg_replace('/^\d+\.\s+/i', '', $this->name);
+    }
 
     public function setName(string $name): self
     {

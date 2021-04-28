@@ -3,6 +3,7 @@
 
 namespace App\Controller;
 
+use App\Entity\Contract;
 use App\Entity\Recipient;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Finder\Finder;
@@ -22,14 +23,41 @@ class FrontController extends AbstractController
     #[Route('/contracts/{taxId}', name: 'contracts_recipient')]
     public function generateContract(string $taxId): Response
     {
-        $r = $this->getDoctrine()->getRepository(Recipient::class)->findOneByTaxId($taxId);
-
-        if (!$r)
+        $recipient = $this->getDoctrine()->getRepository(Recipient::class)->findOneByTaxId($taxId);
+        if (!$recipient)
             $this->createNotFoundException("No recipient found for tax id {$taxId}");
+
+        $contract = $this->getDoctrine()->getRepository(Contract::class)->findOneBy(['recipient' => $recipient]);
+
+        $contractedServices = $contract->getContractedServices();
+
+        // There is no more than 1 consultant associated with 1 activity
+//        $serviceConsultants = [];
+//        foreach ($contractedServices as $cs) {
+//            $serviceName = $cs->getService()->getName();
+//            $consultant = $cs->getConsultant();
+//
+//            if (!isset($services[$serviceName]))
+//                $services[$serviceName] = [$consultant];
+//            else {
+//                if (!in_array($consultant, $serviceConsultants[$serviceName]))
+//                    $serviceConsultants[$serviceName][] = $consultant;
+//            }
+//        }
+
+        $amount = 0;
+        foreach ($contractedServices as $cs) {
+            $amount += $cs->getService()->getHours() * 54;
+        }
+
+        $financedAmount = $amount * 0.2;
 
         return $this->render('contract.html.twig', [
             'base' => static::APP_DIRECTORY,
-            'recipient' => $r
+            'recipient' => $recipient,
+            'services' => $contractedServices,
+            'amount' => $amount,
+            'amount_financed' => $financedAmount,
         ]);
     }
 

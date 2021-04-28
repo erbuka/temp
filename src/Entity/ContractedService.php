@@ -52,18 +52,6 @@ class ContractedService
         return $this->id;
     }
 
-    public function getHours(): ?int
-    {
-        return $this->hours;
-    }
-
-    public function setHours(int $hours): self
-    {
-        $this->hours = $hours;
-
-        return $this;
-    }
-
     public function getService(): Service
     {
         return $this->service;

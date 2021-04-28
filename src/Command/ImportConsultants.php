@@ -159,8 +159,8 @@ VALUES (:name, :title, :job_title)
 
         foreach ($sheetRows as $row) {
             $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]] ?? null);
+            $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]] ?? null);
 
             $insert->executeStatement();
         }
