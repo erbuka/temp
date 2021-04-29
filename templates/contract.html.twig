@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Conagrivet Contracts</title>
+        <title>Contratto {{ recipient.name }}</title>
 
         <link rel="stylesheet" href="{{ asset(base ~ '/assets/styles/contracts.css') }}">
 
@@ -116,7 +116,12 @@
                     <p>L'onere complessivo dei servizi offerti ammonta a {{ amount |format_currency('EUR', locale='it') }}, di cui {{ amount_financed |format_currency('EUR', locale='it') }} sono a carico del destinatario finale dei servizi di consulenza.</p>
 
                     <h3>Modalità di pagamento</h3>
-                    <p>Vista fattura a mezzo bonifico bancario c/o BANCA CENTRO Credito Cooperativo Toscana – Umbria IBAN  IT65I0707572040000000722321, causale 'SALDO FT. DEL CUP ARTEA N. 901854'</p>
+                    <p>
+                        Vista fattura a mezzo bonifico bancario c/o BANCA CENTRO Credito Cooperativo Toscana – Umbria IBAN  IT65I0707572040000000722321, causale 'SALDO FATTURA N.
+                        <input class="fill-blank" type="text" size="9">
+                        DEL
+                        <input class="fill-blank" type="text" size="15">
+                        CUP ARTEA N. 901854'</p>
 
                     <h3>Dichiarazioni</h3>
                     <p>Il destinatario finale del servizio di consulenza dichiara:</p>
