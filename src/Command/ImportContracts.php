@@ -47,6 +47,10 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *
  * Ask confirmation for contract removal
  *
+ * TODOs / not supported yet
+ * - contract removal
+ * - contract update (i.e. removal + addition)
+ *
  */
 class ImportContracts extends Command
 {
