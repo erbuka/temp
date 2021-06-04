@@ -80,7 +80,7 @@ class FrontController extends AbstractController
             ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY)
             ->depth('== 0')
             ->files()
-            ->name('*.js');
+            ->name('index.*.js');
 
         $styles = Finder::create()
             ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY."/assets")

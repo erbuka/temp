@@ -92,7 +92,7 @@ FROM ".static::RAW_TABLE."
             if (!$consultant)
                 $consultant = new Consultant();
 
-            $consultant->setName($name);
+            $consultant->setName(ucwords(strtolower($name)));
             $consultant->setTitle(trim($title));
             $consultant->setJobTitle(trim($jobTitle));
 

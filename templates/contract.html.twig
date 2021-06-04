@@ -85,7 +85,7 @@
                         <ul class="consultants">
                             <li>
                                 <span class="title">{{ service.consultant.title }}</span>
-                                <span class="name">{{ service.consultant.name }}</span>
+                                <span class="name">{{ service.consultant.name | upper }}</span>
                                 {%- if not service.consultant.jobTitle is empty -%}
                                     , <span class="job">{{ service.consultant.jobTitle }}</span>
                                 {% endif %}
