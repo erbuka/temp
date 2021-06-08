@@ -5,76 +5,140 @@ namespace App\Command;
 
 
 use App\Entity\Consultant;
-use App\Repository\ConsultantRepository;
-use Doctrine\DBAL\Types\Type;
+use App\Entity\Contract;
+use App\Entity\ContractedService;
+use App\Entity\Recipient;
+use App\Entity\Service;
+use App\Entity\Task;
+use App\Schedule;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
+use Spatie\Period\Period;
+use Spatie\Period\Precision;
+use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+#[AsCommand(
+    name: 'app:schedule',
+    description: 'Generates a schedule for the planned activities'
+)]
 class ScheduleActivities extends Command
 {
-    protected static $defaultName = 'app:schedule-activities';
+    const DATE_NOTIME = 'Y-m-d';
+    const CONTRACTED_SERVICES_VIEW = 'contracted_service_extd';
 
     protected \DateTimeInterface $from;
     protected \DateTimeInterface $to;
     protected \DateTimeZone $timezone;
     protected EntityManagerInterface $entityManager;
     protected Connection $rawConnection;
+    protected Connection $connection;
+    protected ValidatorInterface $validator;
     protected OutputInterface $output;
     protected InputInterface $input;
 
-    public function __construct(EntityManagerInterface $entityManager, Connection $rawConnection)
+    /** @var Service[] */
+    private array $services;
+    /** @var array<string, array<string, number>> */
+    private array $serviceSlots; // ['service name' => ['start' => 12, 'end' => 123]
+
+//    private Schedule $schedule;
+
+    public function __construct(EntityManagerInterface $entityManager, Connection $rawConnection, Connection $defaultConnection,  ValidatorInterface $validator)
     {
         $this->entityManager = $entityManager;
         $this->rawConnection = $rawConnection;
+        $this->connection = $defaultConnection;
+        $this->validator = $validator;
 
-        $this->timezone = new \DateTimeZone('Europe/Rome');
-        $this->from = \DateTimeImmutable::createFromFormat(
-            'Y-m-d H:i:s',
-            '2021-03-01 00:00:00',
-            $this->timezone
-        );
-        $this->to = \DateTimeImmutable::createFromFormat(
-            'Y-m-d H:i:s',
-            '2022-02-28 23:59:59',
-            $this->timezone
-        );
+        $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-01T00:00:00Z');
+        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-05-30T23:59:59Z');
 
         parent::__construct();
-    }
-
-    protected function configure()
-    {
-        $this->setDescription('Generates a schedule for the planned activities');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $this->output = $output;
         $this->input = $input;
-        $em = $this->entityManager;
 
         $output->writeln(sprintf('Scheduling activities from %s to %s', $this->from->format(DATE_RFC3339), $this->to->format(DATE_RFC3339)));
 
-        // For each consultant
-        $sql = "
-SELECT consultant, SUM(hours) as hours_total
-FROM company_consultant_activity
-GROUP BY consultant
-HAVING hours_total <= ". 250 * 10 ."
-ORDER BY hours_total DESC
-        ";
+        $this->preloadServices();
+        $scheduleId = Uuid::v4();
 
-        foreach ($this->rawConnection->executeQuery($sql, ['hours_cap' => 250*10], ['hours_cap' => Types::INTEGER])->iterateAssociative() as ['consultant' => $name, 'hours_total' => $total]) {
-            $this->output->writeln("Allocating {$total} hours for {$name}");
+        $recipientsSQL = "
+SELECT recipient_id, service FROM `". static::CONTRACTED_SERVICES_VIEW ."`
+WHERE consultant = :consultant
+GROUP BY recipient_id, service
+ORDER BY recipient_id
+";
 
-            $consultant = $this->entityManager->getRepository(Consultant::class)->findOneBy(['name' => $name]);
-            assert($consultant, "Cannot find consultant {$name}");
+        foreach ($this->entityManager->getRepository(Consultant::class)->findAll() as $consultant) {
+            /** @var Consultant $consultant */
+//            if ($consultant->getName() !== 'Belelli Fiorenzo') continue;
 
+            $consultantSchedule = new Schedule($this->from, $this->to);
+
+            // !!! TODO for each service, $scheduler->getRandomFreeSlot($service->start, $service->end)
+            // TODO check start and end bounderies, e.g. end=2021-10-01T00:00 must include somehow 2021-10-01T18:00
+
+            // Allocate 1 slot for each (client, service)
+            foreach ($this->connection->executeQuery($recipientsSQL, ['consultant' => $consultant->getName()])->iterateAssociative() as [
+                'recipient_id' => $recipientId,
+                'service' => $serviceName
+            ]) {
+                /** @var Recipient $recipient */
+                $recipient = $this->entityManager->getRepository(Recipient::class)->find($recipientId);
+                /** @var Service $service */
+                $service = $this->entityManager->getRepository(Service::class)->find($serviceName);
+
+                assert($recipient !== null, "Unable to lookup recipient {$recipientId}");
+                assert($service !== null, "Unable to lookup service {$serviceName}");
+
+                // Allocate recipient
+                $slot = $consultantSchedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
+
+                // Select service by ranking all services belonging to this client
+
+//                $services = $this->rankServices($slot->getPeriod()->start(), $recipient, $consultant);
+//                assert(count($services) > 0, "Not implemented: handle the case where there are no services for (client, slot_date)");
+//                $service = current($services);
+
+                $task = new Task();
+                $task->setConsultant($consultant);
+                $task->setRecipient($recipient);
+                $task->setService($service);
+                $task->setStart($slot->getPeriod()->start()); // truncated by precision
+                $task->setEnd($slot->getPeriod()->end()); // truncated by precision
+                $task->setScheduleId($scheduleId);
+                $task->setOnPremises(false);
+
+                if (count($errors = $this->validator->validate($task)) > 0) {
+                    throw new \Exception("Cannot validate task ({$task->getConsultant()->getName()}, {$task->getRecipientName()}, {$task->getService()->getName()}): ". $errors);
+                }
+
+                $this->entityManager->persist($task);
+
+                $slot->assignTask($task);
+
+//                $this->output->writeln(sprintf('[%s] Allocated slot %s to service "%s" for client "%s"',
+//                    $consultant->getName(),
+//                    $slot->getPeriod()->asString(),
+//                    $service->getName(),
+//                    $recipient->getName()
+//                ));
+            }
+
+            $this->output->writeln(sprintf("<info>SCHEDULE for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
         }
+
+        $this->entityManager->flush();
 
         return Command::SUCCESS;
     }
@@ -86,5 +150,53 @@ ORDER BY hours_total DESC
 
     }
 
-    // TODO command to load activities "codifica conagrivet"
+    /**
+     */
+    protected function rankServices(\DateTimeInterface $date, Recipient $recipient, Consultant $consultant)
+    {
+        $services = [];
+
+        $contract = $this->entityManager->getRepository(Contract::class)->findOneBy(['recipient' => $recipient]);
+        assert($contract !== null);
+        $contractedServices = $this->entityManager->getRepository(ContractedService::class)->findBy([
+            'consultant' => $consultant,
+            'contract' => $contract,
+        ]);
+
+        foreach ($contractedServices as $contractedService) {
+            $service = $contractedService->getService();
+            if (!$service->getDateBefore()) {
+                $service->setDateBefore($this->to);
+            }
+            if (!$service->getDateAfter()) $service->setDateAfteR($this->from);
+
+            $period = Period::make($service->getDateAfter(), $service->getDateBefore(), Precision::DAY());
+            if (!$period->contains($date))
+                continue;
+
+            $services[] = $service;
+        }
+
+        usort($services, function (/** @var Service $a */ $a, /** @var Service $b */ $b) {
+            $a_interval = $a->getToDate()->diff($a->getFromDate(), true);
+            $b_interval = $b->getDateBefore()->diff($b->getDateAfter(), true);
+
+            return $a_interval->days <=> $b_interval->days;
+        });
+
+        return $services;
+    }
+
+    private function preloadServices()
+    {
+        foreach ($this->entityManager->getRepository(Service::class)->findAll() as /** @var Service $service */ $service) {
+            if (!$service->getToDate() || $service->getToDate() > $this->to)
+                $service->setToDate($this->to);
+
+            if (!$service->getFromDate() || $service->getFromDate() < $this->from)
+                $service->setFromDate($this->from);
+
+            $this->services[$service->getName()] = $service;
+        }
+    }
 }

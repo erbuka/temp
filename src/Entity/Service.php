@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\ServiceRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Validator\Constraints as Assert;
+use App\Validator\Constraints as AppAssert;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 
 /**
@@ -29,7 +30,7 @@ class Service
     /**
      * @ORM\Column(type="smallint", options={"unsigned":true})
      */
-    #[Assert\PositiveOrZero]
+    #[Assert\Positive]
     private int $hoursOnPremises;
 
     /**
@@ -58,6 +59,22 @@ class Service
      * @ORM\Column(type="text", nullable=true)
      */
     private ?string $expectations;
+
+    /**
+     * Date before which this service should not be performed.
+     *
+     * @ORM\Column(type="date", nullable=true)
+     * @AppAssert\DateTimeUTC()
+     */
+    private ?\DateTimeInterface $fromDate;
+
+    /**
+     * Date after which this service should not be performed.
+     *
+     * @ORM\Column(type="date", nullable=true)
+     * @AppAssert\DateTimeUTC()
+     */
+    private ?\DateTimeInterface $toDate;
 
     public function getName(): string
     {
@@ -161,6 +178,30 @@ class Service
     public function setExpectations(?string $expectations): self
     {
         $this->expectations = $expectations;
+
+        return $this;
+    }
+
+    public function getFromDate(): ?\DateTimeInterface
+    {
+        return $this->fromDate;
+    }
+
+    public function setFromDate(?\DateTimeInterface $from): self
+    {
+        $this->fromDate = $from;
+
+        return $this;
+    }
+
+    public function getToDate(): ?\DateTimeInterface
+    {
+        return $this->toDate;
+    }
+
+    public function setToDate(?\DateTimeInterface $to): self
+    {
+        $this->toDate = $to;
 
         return $this;
     }

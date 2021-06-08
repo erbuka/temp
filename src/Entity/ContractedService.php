@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\ContractedServiceRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=ContractedServiceRepository::class)
@@ -23,11 +24,6 @@ class ContractedService
      * @ORM\Column(type="integer")
      */
     private int $id;
-
-    /**
-     * @ORM\Column(type="integer", nullable=true)
-     */
-    private int $hours;
 
     /**
      * @ORM\ManyToOne(targetEntity=Contract::class, inversedBy="services")
@@ -86,5 +82,15 @@ class ContractedService
         $this->consultant = $consultant;
 
         return $this;
+    }
+
+    public function getRecipientName(): string
+    {
+        return $this->getContract()->getRecipient()->getName();
+    }
+
+    public function getHours(): int
+    {
+        return $this->getService()->getHours();
     }
 }

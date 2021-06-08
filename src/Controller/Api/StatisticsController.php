@@ -57,4 +57,15 @@ SQL;
 
         return new JsonResponse($data);
     }
+
+    #[Route('/schedule', name: 'schedule')]
+    public function scheduling(): Response
+    {
+
+
+
+        $data = [];
+
+        return new JsonResponse($data);
+    }
 }

@@ -30,4 +30,5 @@ services:
     # as action arguments even if you don't extend any base controller class
 
     # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+    # please note that last definitions always *replace* previous ones~
+    Symfony\Component\Uid\Command\InspectUuidCommand: ~

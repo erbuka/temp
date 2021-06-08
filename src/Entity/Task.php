@@ -4,6 +4,9 @@ namespace App\Entity;
 
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
+use App\Validator\Constraints as CustomAssert;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=TaskRepository::class)
@@ -13,77 +16,101 @@ class Task
     /**
      * @ORM\Id
      * @ORM\GeneratedValue
-     * @ORM\Column(type="integer")
+     * @ORM\Column(type="integer", options={"unsigned":true})
      */
-    private $id;
+    private int $id;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="datetime", nullable=false)
+     * @CustomAssert\DateTimeUTC()
      */
-    private $recipient;
+    #[Assert\NotNull]
+    private \DateTimeInterface $start;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="datetime", nullable=false)
+     * @CustomAssert\DateTimeUTC()
      */
-    private $consultant;
+    #[Assert\NotNull]
+    private \DateTimeInterface $end;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="boolean")
      */
-    private $activity;
+    private bool $onPremises;
 
     /**
-     * @ORM\Column(type="datetime")
+     * @ORM\ManyToOne(targetEntity=Consultant::class)
+     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
-    private $start;
+    private Consultant $consultant;
 
     /**
-     * @ORM\Column(type="datetime")
+     * @ORM\ManyToOne(targetEntity=Recipient::class)
+     * @ORM\JoinColumn(nullable=false)
      */
-    private $end;
+    private Recipient $recipient;
 
     /**
-     * @ORM\Column(type="string", length=255)
+     * @ORM\Column(type="string", length=150)
      */
-    private $method;
+    #[Assert\NotBlank]
+    private string $recipientName;
+
+    /**
+     * @ORM\ManyToOne(targetEntity=Service::class)
+     * @ORM\JoinColumn(referencedColumnName="name")
+     */
+    private Service $service;
+
+    /**
+     * @ORM\Column(type="uuid")
+     */
+    private Uuid $scheduleId;
 
     public function getId(): ?int
     {
         return $this->id;
     }
 
-    public function getRecipient(): ?string
+    public function getRecipient(): Recipient
     {
         return $this->recipient;
     }
 
-    public function setRecipient(string $recipient): self
+    public function setRecipient(Recipient $recipient): self
     {
         $this->recipient = $recipient;
+        $this->recipientName = $recipient->getName();
 
         return $this;
     }
 
-    public function getConsultant(): ?string
+    public function getRecipientName(): string
+    {
+        return $this->recipientName;
+    }
+
+    public function getConsultant(): Consultant
     {
         return $this->consultant;
     }
 
-    public function setConsultant(string $consultant): self
+    public function setConsultant(Consultant $consultant): self
     {
         $this->consultant = $consultant;
 
         return $this;
     }
 
-    public function getActivity(): ?string
+    public function getService(): Service
     {
-        return $this->activity;
+        return $this->service;
     }
 
-    public function setActivity(string $activity): self
+    public function setService(Service $service): self
     {
-        $this->activity = $activity;
+        $this->service = $service;
 
         return $this;
     }
@@ -112,14 +139,26 @@ class Task
         return $this;
     }
 
-    public function getMethod(): ?string
+    public function getOnPremises(): bool
     {
-        return $this->method;
+        return $this->onPremises;
     }
 
-    public function setMethod(string $method): self
+    public function setOnPremises(bool $onPremises): self
     {
-        $this->method = $method;
+        $this->onPremises = $onPremises;
+
+        return $this;
+    }
+
+    public function getScheduleId(): Uuid
+    {
+        return $this->scheduleId;
+    }
+
+    public function setScheduleId(Uuid $scheduleId): self
+    {
+        $this->scheduleId = $scheduleId;
 
         return $this;
     }

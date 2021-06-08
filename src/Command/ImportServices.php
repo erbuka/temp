@@ -34,6 +34,8 @@ class ImportServices extends Command
         'hours' => 7,
         'hours_onpremises' => 8,
         'hours_remote' => 9,
+        'after' => 10,
+        'before' => 11,
     ];
 
     protected EntityManagerInterface $entityManager;
@@ -90,7 +92,7 @@ class ImportServices extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT TRIM(name) as name, hours, hours_onpremises, hours_remote, description, category, reasons, expectations, steps
+SELECT TRIM(name) as name, hours, hours_onpremises, hours_remote, description, category, reasons, expectations, steps, `after`, `before`
 FROM ".static::RAW_TABLE."
 ";
 
@@ -103,7 +105,9 @@ FROM ".static::RAW_TABLE."
             'category' => $category,
             'reasons' => $reasons,
             'expectations' => $expectations,
-            'steps' => $steps
+            'steps' => $steps,
+            'after' => $after,
+            'before' => $before,
         ]) {
             if (intval($hours) !== (intval($hoursOnPremises) + intval($hoursRemote)))
                 throw new \Exception("Total hours does not equal the sum or remote and on-premises for {$name}");
@@ -120,6 +124,14 @@ FROM ".static::RAW_TABLE."
             $service->setReasons(static::textListToArray($reasons));
             $service->setExpectations(trim($expectations));
             $service->setSteps(static::textListToArray($steps));
+            if ($after && ($afterDate = \DateTime::createFromFormat('d/m/Y', $after, new \DateTimeZone('UTC')))) {
+                $afterDate->setTime(0 , 0);
+                $service->setFromDate($afterDate);
+            }
+            if ($before && ($beforeDate = \DateTime::createFromFormat('d/m/Y', $before, new \DateTimeZone('UTC')))) {
+                $beforeDate->setTime(23, 59);
+                $service->setToDate($beforeDate);
+            }
 
             $errors = $this->validator->validate($service);
             if (count($errors) > 0) throw new \Exception("Cannot validate Service {$service->getName()}: ". $errors);
@@ -178,8 +190,8 @@ FROM ".static::RAW_TABLE."
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
-(name, category, ab, hours, hours_onpremises, hours_remote, description, reasons, expectations, steps)
-VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :description, :reasons, :expectations, :steps)
+(`name`, category, ab, hours, hours_onpremises, hours_remote, description, reasons, expectations, steps, `after`, `before`)
+VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :description, :reasons, :expectations, :steps, :after, :before)
 ");
 
         foreach ($sheetRows as $row) {
@@ -193,6 +205,9 @@ VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :descri
             $insert->bindValue($name = 'reasons', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'expectations', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'steps', $row[$sheetColumnsMap[$name]]);
+
+            $insert->bindValue($name = 'after', !empty($row[$sheetColumnsMap[$name]]) ? $row[$sheetColumnsMap[$name]] : null);
+            $insert->bindValue($name = 'before', !empty($row[$sheetColumnsMap[$name]]) ? $row[$sheetColumnsMap[$name]] : null);
 
             $insert->executeStatement();
         }
