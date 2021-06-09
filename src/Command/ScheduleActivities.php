@@ -10,7 +10,7 @@ use App\Entity\ContractedService;
 use App\Entity\Recipient;
 use App\Entity\Service;
 use App\Entity\Task;
-use App\Schedule;
+use App\Entity\Schedule;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
@@ -70,7 +70,6 @@ class ScheduleActivities extends Command
         $output->writeln(sprintf('Scheduling activities from %s to %s', $this->from->format(DATE_RFC3339), $this->to->format(DATE_RFC3339)));
 
         $this->preloadServices();
-        $scheduleId = Uuid::v4();
 
         $recipientsSQL = "
 SELECT recipient_id, service FROM `". static::CONTRACTED_SERVICES_VIEW ."`
@@ -83,7 +82,7 @@ ORDER BY recipient_id
             /** @var Consultant $consultant */
 //            if ($consultant->getName() !== 'Belelli Fiorenzo') continue;
 
-            $consultantSchedule = new Schedule($this->from, $this->to);
+            $schedule = new Schedule($this->from, $this->to);
 
             // !!! TODO for each service, $scheduler->getRandomFreeSlot($service->start, $service->end)
             // TODO check start and end bounderies, e.g. end=2021-10-01T00:00 must include somehow 2021-10-01T18:00
@@ -102,7 +101,7 @@ ORDER BY recipient_id
                 assert($service !== null, "Unable to lookup service {$serviceName}");
 
                 // Allocate recipient
-                $slot = $consultantSchedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
+                $slot = $schedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
 
                 // Select service by ranking all services belonging to this client
 
@@ -116,16 +115,16 @@ ORDER BY recipient_id
                 $task->setService($service);
                 $task->setStart($slot->getPeriod()->start()); // truncated by precision
                 $task->setEnd($slot->getPeriod()->end()); // truncated by precision
-                $task->setScheduleId($scheduleId);
                 $task->setOnPremises(false);
 
                 if (count($errors = $this->validator->validate($task)) > 0) {
-                    throw new \Exception("Cannot validate task ({$task->getConsultant()->getName()}, {$task->getRecipientName()}, {$task->getService()->getName()}): ". $errors);
+                    throw new \Exception("Cannot validate task ({$task->getConsultant()->getName()}, {$task->getRecipient()->getName()}, {$task->getService()->getName()}): ". $errors);
                 }
 
                 $this->entityManager->persist($task);
 
                 $slot->assignTask($task);
+                $schedule->addTask($task);
 
 //                $this->output->writeln(sprintf('[%s] Allocated slot %s to service "%s" for client "%s"',
 //                    $consultant->getName(),
@@ -135,7 +134,9 @@ ORDER BY recipient_id
 //                ));
             }
 
-            $this->output->writeln(sprintf("<info>SCHEDULE for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
+            $this->entityManager->persist($schedule);
+
+            $this->output->writeln(sprintf("<info>SCHEDULE for %s</info> %s", $consultant->getName(), $schedule->getStats()));
         }
 
         $this->entityManager->flush();

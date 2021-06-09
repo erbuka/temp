@@ -42,6 +42,11 @@ class Slot
         return isset($this->task);
     }
 
+    public function isFree(): bool
+    {
+        return !$this->isAllocated();
+    }
+
     public function assignTask(Task $task)
     {
         $this->task = $task;

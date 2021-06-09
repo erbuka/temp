@@ -5,7 +5,6 @@ namespace App\Entity;
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use App\Validator\Constraints as CustomAssert;
-use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -52,6 +51,7 @@ class Task
     private Recipient $recipient;
 
     /**
+     * Meant to be used when directly querying the database via SQL.
      * @ORM\Column(type="string", length=150)
      */
     #[Assert\NotBlank]
@@ -59,14 +59,15 @@ class Task
 
     /**
      * @ORM\ManyToOne(targetEntity=Service::class)
-     * @ORM\JoinColumn(referencedColumnName="name")
+     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
     private Service $service;
 
     /**
-     * @ORM\Column(type="uuid")
+     * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
+     * @ORM\JoinColumn(nullable=false)
      */
-    private Uuid $scheduleId;
+    private Schedule $schedule;
 
     public function getId(): ?int
     {
@@ -84,11 +85,6 @@ class Task
         $this->recipientName = $recipient->getName();
 
         return $this;
-    }
-
-    public function getRecipientName(): string
-    {
-        return $this->recipientName;
     }
 
     public function getConsultant(): Consultant
@@ -115,7 +111,7 @@ class Task
         return $this;
     }
 
-    public function getStart(): ?\DateTimeInterface
+    public function getStart(): \DateTimeInterface
     {
         return $this->start;
     }
@@ -127,7 +123,7 @@ class Task
         return $this;
     }
 
-    public function getEnd(): ?\DateTimeInterface
+    public function getEnd(): \DateTimeInterface
     {
         return $this->end;
     }
@@ -151,14 +147,14 @@ class Task
         return $this;
     }
 
-    public function getScheduleId(): Uuid
+    public function getSchedule(): Schedule
     {
-        return $this->scheduleId;
+        return $this->schedule;
     }
 
-    public function setScheduleId(Uuid $scheduleId): self
+    public function setSchedule(Schedule $schedule): self
     {
-        $this->scheduleId = $scheduleId;
+        $this->schedule = $schedule;
 
         return $this;
     }

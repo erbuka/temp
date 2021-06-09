@@ -1,28 +1,23 @@
 <?php
 
+namespace App\Entity;
 
-namespace App;
-
-use App\Entity\Consultant;
+use App\Repository\ScheduleRepository;
+use App\Slot;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
+use Doctrine\ORM\Mapping as ORM;
 use Spatie\Period\Period;
 use Spatie\Period\Precision;
-use Doctrine\ORM\Mapping as ORM;
-use App\Validator\Constraints as CustomAssert;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
+use App\Validator\Constraints as CustomAssert;
 
 /**
- * Represent a Consultant schedule
- *
- * N.B. doctrine does not call the constructor when loading the object from the database.
- * @deprecated
+ * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
 class Schedule
 {
-    private \SplFixedArray $slots;
-
-    private Consultant $consultant;
-    private Period $period;
-
     const HOLIDAY_DATES = [
         // Y-m-d format
         '2021-08-14', // Prefestivo
@@ -72,9 +67,57 @@ class Schedule
     ];
     const DATE_NOTIME = 'Y-m-d';
 
+    //region Persisted fields
+
+    /**
+     * @ORM\Id
+     * @ORM\GeneratedValue
+     * @ORM\Column(type="integer", options={"unsigned":true})
+     */
+    private int $id;
+
+    /**
+     * @ORM\Column(type="uuid")
+     */
+    private Uuid $uuid;
+
+    /**
+     * @ORM\Column(name="`from`", type="datetime", nullable=false)
+     * @CustomAssert\DateTimeUTC()
+     */
+    #[Assert\NotNull]
+    private \DateTimeInterface $from;
+
+    /**
+     * @ORM\Column(name="`to`", type="datetime", nullable=false)
+     * @CustomAssert\DateTimeUTC()
+     */
+    #[Assert\NotNull]
+    private \DateTimeInterface $to;
+
+    /**
+     * @ORM\OneToMany(targetEntity=Task::class, mappedBy="schedule", orphanRemoval=true)
+     * @var Collection<Task>
+     */
+    private Collection $tasks;
+
+    //endregion Persisted fields
+
+    private \SplFixedArray $slots;
+    private Consultant $consultant;
+    private Period $period;
+
+    /**
+     * Invoked only when creating new entities inside the app.
+     * Never invoked by Doctrine when retrieving objcts from the database.
+     */
     public function __construct(\DateTimeInterface $fromDay, \DateTimeInterface $toDay)
     {
+        $this->tasks = new ArrayCollection();
+        $this->uuid = Uuid::v4();
         $this->period = Period::make($fromDay, $toDay, Precision::DAY());
+        $this->from = $this->period->start();
+        $this->to = $this->period->end();
 
         $this->generateSlots();
     }
@@ -221,4 +264,57 @@ class Schedule
     {
         throw new \RuntimeException('Not Implemented');
     }
+
+    //region Persisted fields accessors
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
+
+    public function getUuid(): Uuid
+    {
+        return $this->uuid;
+    }
+
+    /**
+     * @return ArrayCollection<Task>
+     */
+    public function getTasks(): Collection
+    {
+        return $this->tasks;
+    }
+
+    public function addTask(Task $task): self
+    {
+        if (!$this->tasks->contains($task)) {
+            $this->tasks[] = $task;
+            $task->setSchedule($this);
+        }
+
+        return $this;
+    }
+
+    public function removeTask(Task $task): self
+    {
+        if ($this->tasks->removeElement($task)) {
+            // set the owning side to null (unless already changed)
+            if ($task->getSchedule() === $this) {
+                $task->setSchedule(null);
+            }
+        }
+
+        return $this;
+    }
+
+    public function getFrom(): \DateTimeInterface
+    {
+        return $this->from;
+    }
+
+    public function getTo(): \DateTimeInterface
+    {
+        return $this->to;
+    }
+
+    //endregion Persisted fields accessors
 }

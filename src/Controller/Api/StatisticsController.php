@@ -4,7 +4,9 @@
 namespace App\Controller\Api;
 
 use App\Entity\ContractedService;
+use App\Entity\Schedule;
 use App\Entity\Service;
+use App\Entity\Task;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -58,13 +60,39 @@ SQL;
         return new JsonResponse($data);
     }
 
+    /**
+     * Returns (slot_hour, slot_day for each consultant's schedule.
+     * This is used to create a scatter plot where each point corresponds to a (consultant, slot_hour, slot_day#)
+     */
     #[Route('/schedule', name: 'schedule')]
-    public function scheduling(): Response
+    public function scheduling(EntityManagerInterface $em): Response
     {
+        $schedules = $em->getRepository(Schedule::class)->findAll();
+        assert(count($schedules) > 0, "No schedules found");
 
-
-
+        // TODO assumes each task occupies 1 hour slot. This won't hold true when adjacent slot aggregation is implemented.
         $data = [];
+
+        foreach ($schedules as $schedule) {
+            /** @var Schedule $schedule */
+            foreach ($schedule->getTasks() as $task) {
+                /** @var Task $task */
+                $consultant = $task->getConsultant()->getName();
+
+                if (!isset($data[$consultant]))
+                    $data[$consultant] = [];
+
+                // assumes task duration does not cross the day!
+                assert(($h = $task->getStart()->diff($task->getEnd())->h) === 1, "Task lasts {$h}>1 hours");
+
+                $data[$consultant][] = [
+                    'hour_slot' => intval($task->getStart()->format('H')),  // 00:00 => 0, 01:00 => 1, ...
+                    'day_slot' => intval($task->getStart()->format('Ymd')),
+                    'recipient' => $task->getRecipient()->getName(),
+                    'service' => $task->getService()->getName(),
+                ];
+            }
+        }
 
         return new JsonResponse($data);
     }
