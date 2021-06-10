@@ -7,6 +7,7 @@ use App\Entity\Contract;
 use App\Entity\Recipient;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Profiler\Profiler;
 use Symfony\Component\Routing\Annotation\Route;
@@ -74,7 +75,7 @@ class FrontController extends AbstractController
     }
 
     #[Route('/{req<(?!api\/).*>}', name: 'app')]
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $scripts = Finder::create()
             ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY)

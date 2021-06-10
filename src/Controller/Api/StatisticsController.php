@@ -87,7 +87,7 @@ SQL;
 
                 $data[$consultant][] = [
                     'hour_slot' => intval($task->getStart()->format('H')),  // 00:00 => 0, 01:00 => 1, ...
-                    'day_slot' => intval($task->getStart()->format('Ymd')),
+                    'day_slot' => $schedule->getFrom()->diff($task->getStart())->days,
                     'recipient' => $task->getRecipient()->getName(),
                     'service' => $task->getService()->getName(),
                 ];
