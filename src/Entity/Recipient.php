@@ -98,4 +98,9 @@ class Recipient
 
         return $this;
     }
+
+    public function getTaxId(): string
+    {
+        return $this->vatId ?? $this->fiscalCode;
+    }
 }

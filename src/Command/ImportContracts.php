@@ -110,78 +110,57 @@ class ImportContracts extends Command
             $this->importSheetData($spreadsheetId, $sheetId);
         }
 
-        $contractedServicesQuery = $this->rawConnection->prepare("
-SELECT service, hours, amount_eur, consultant
-FROM ".static::RAW_TABLE."
-WHERE recipient = :recipient
-");
+        foreach ($this->rawConnection->executeQuery("SELECT recipient, recipient_taxid, service, hours, amount_eur, consultant FROM ".static::RAW_TABLE)->iterateAssociative() as [
+            'service' => $serviceName,
+            'consultant' => $consultantName,
+            'recipient' => $recipientName,
+            'recipient_taxid' => $recipientTaxId
+        ]) {
+            /** @var Recipient $recipient */
+            $recipient = $this->entityManager->getRepository(Recipient::class)->findOneBy(['name' => $recipientName]);
+            if (!$recipient) throw new \Exception("Unable to find recipient {$recipientName}");
 
-        foreach ($this->entityManager->getRepository(Recipient::class)->findAll() as $recipient) {
-            /** @var $recipient Recipient */
-//            $this->output->writeln('Recipient:'. $recipient->getName());
+            /** @var Service $service */
+            $service = $this->entityManager->getRepository(Service::class)->find($serviceName);
+            if (!$service) throw new \Exception("Cannot retrieve service '{$serviceName}'");
 
-            // TODO warn/skip if recipient has already a contract
-            // Are multiple contracts per recipient allowed? I dont think so
+            /** @var Consultant $consultant */
+            $consultant = $this->entityManager->getRepository(Consultant::class)->findOneBy(['name' => $consultantName]);
+            if (!$consultant) throw new \Exception("Cannot retrieve consultant '{$consultantName}'");
 
             // 1. detected whether a contract already exists for (recipient, Array<(consultant, service)>)
             // throw error if recipient has already contracted (service, consultant)
             $contract = $this->entityManager->getRepository(Contract::class)->findOneBy(['recipient' => $recipient]);
             if (!$contract) {
                 $contract = new Contract();
+                $contract->setRecipient($recipient);
+                $this->entityManager->persist($contract);
+                $this->entityManager->flush();
             }
 
-            $contract->setRecipient($recipient);
-            $this->entityManager->persist($contract);
+            $contractedService = $this->entityManager->getRepository(ContractedService::class)->findOneBy(['contract' => $contract, 'service' => $service, 'consultant' => $consultant]);
+            if (!$contractedService) {
+                $contractedService = new ContractedService();
+                $contractedService->setService($service);
+                $contractedService->setConsultant($consultant);
+                $this->entityManager->persist($contractedService);
 
-            // Ideally we flush after the contract
-            $contractedServicesQuery->bindValue('recipient', $recipient->getName());
+                $contract->addContractedService($contractedService); // calls $cs->setContract($contract)
 
-            foreach ($contractedServicesQuery->executeQuery()->iterateAssociative() as ['service' => $serviceName, 'hours' => $hours, 'consultant' => $consultantName]) {
-                // TODO if contracted (service, consultant) already exists, update it (hours?)
-
-                /** @var Service $service */
-                $service = $this->entityManager->getRepository(Service::class)->find($serviceName);
-                if (!$service) throw new \Exception("Cannot retrieve service '{$serviceName}'");
-
-                /** @var Consultant $consultant */
-                $consultant = $this->entityManager->getRepository(Consultant::class)->findOneBy(['name' => $consultantName]);
-                if (!$consultant) throw new \Exception("Cannot retrieve consultant '{$consultantName}'");
-
-                $contractedService = $this->entityManager->getRepository(ContractedService::class)->findOneBy(['contract' => $contract, 'service' => $service, 'consultant' => $consultant]);
-                if (!$contractedService) {
-                    $contractedService = new ContractedService();
-                    $contractedService->setService($service);
-                    $contractedService->setConsultant($consultant);
-                    $this->entityManager->persist($contractedService);
-
-                    $contract->addContractedService($contractedService); // calls $cs->setContract($contract)
-
-                    $this->entityManager->flush();
 //                    $query = $this->entityManager->createQuery("SELECT cs FROM ". ContractedService::class ." cs");
 //                    $res = $query->getResult();
-                } else {
-                    // TODO throw if recipient has already contracted (service, consultant)
-                    $output->writeln("Duplicated contracted service: recipient='{$recipient->getName()}', service='{$service->getName()}', consultant='{$consultant->getName()}'");
-                }
-
-                $errors = $this->validator->validate($contractedService);
-                if (count($errors) > 0) throw new \Exception("Cannot validate ContractedService {$contract->getRecipient()->getName()}({$contractedService->getService()}, {$contractedService->getConsultant()}): ". $errors);
-
-                // Move flushes outside the loop, but use DQL to get existing ContractedService's which are not yet flushed.
-//                $this->entityManager->flush();
+            } else {
+                // TODO throw if recipient has already contracted (service, consultant)
+                $output->writeln("Duplicated contracted service: recipient='{$recipient->getName()}', service='{$service->getName()}', consultant='{$consultant->getName()}'");
             }
+
+            $errors = $this->validator->validate($contractedService);
+            if (count($errors) > 0) throw new \Exception("Cannot validate ContractedService {$contract->getRecipient()->getName()}({$contractedService->getService()}, {$contractedService->getConsultant()}): ". $errors);
 
             $errors = $this->validator->validate($contract);
             if (count($errors) > 0) throw new \Exception("Cannot validate Contract {$contract->getRecipient()->getName()}: ". $errors);
 
-            // fetch raw contracted services: Array<(service, consultant, hours)>
-            // throw if the recipient has already contracted (service, consultant)
-            //   => should throw for AZIENDA AGRICOLA CASABIANCA S.R.L. / CECCHI MARCO
-
-            // Create ContractedService[]
-            // Create Contract($recipient, $contractedServices);
-//            $output->writeln("<info>Flushing contract recipient={$recipient->getName()}");
-
+            $this->entityManager->flush();
         }
 
         return Command::SUCCESS;
