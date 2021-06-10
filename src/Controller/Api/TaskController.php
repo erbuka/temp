@@ -40,7 +40,7 @@ class TaskController
                     'on_premises' => $task->getOnPremises(),
                     'consultant' => $task->getConsultant()->getName(),
                     'recipient' => $task->getRecipient()->getName(),
-                    'schedule_id' => $task->getScheduleId()->toRfc4122()
+                    'schedule_id' => $task->getSchedule()->getUuid()->toRfc4122()
                 ]
             ];
         }
