@@ -34,8 +34,7 @@ UNION
 
 (SELECT cs.consultant_id as consultant, cs.service_id as service, SUM(s.hours) as hours
 FROM {$contractedServiceTable} cs LEFT JOIN {$serviceTableName} s ON cs.service_id=s.name
-GROUP BY cs.consultant_id, cs.service_id WITH ROLLUP
-ORDER BY cs.consultant_id, cs.service_id)
+GROUP BY cs.consultant_id, cs.service_id WITH ROLLUP)
 SQL;
 
         $data = [];
