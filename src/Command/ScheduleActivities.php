@@ -70,6 +70,7 @@ class ScheduleActivities extends Command
         $output->writeln(sprintf('Scheduling activities from %s to %s', $this->from->format(DATE_RFC3339), $this->to->format(DATE_RFC3339)));
 
         $this->preloadServices();
+        $schedule = new Schedule($this->from, $this->to);
 
         $recipientsSQL = "
 SELECT recipient_id, service FROM `". static::CONTRACTED_SERVICES_VIEW ."`
@@ -82,7 +83,7 @@ ORDER BY recipient_id
             /** @var Consultant $consultant */
 //            if ($consultant->getName() !== 'Belelli Fiorenzo') continue;
 
-            $schedule = new Schedule($this->from, $this->to);
+            $consultantSchedule = new Schedule($this->from, $this->to);
 
             // !!! TODO for each service, $scheduler->getRandomFreeSlot($service->start, $service->end)
             // TODO check start and end bounderies, e.g. end=2021-10-01T00:00 must include somehow 2021-10-01T18:00
@@ -101,7 +102,7 @@ ORDER BY recipient_id
                 assert($service !== null, "Unable to lookup service {$serviceName}");
 
                 // Allocate recipient
-                $slot = $schedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
+                $slot = $consultantSchedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
 
                 // Select service by ranking all services belonging to this client
 
@@ -113,8 +114,8 @@ ORDER BY recipient_id
                 $task->setConsultant($consultant);
                 $task->setRecipient($recipient);
                 $task->setService($service);
-                $task->setStart($slot->getPeriod()->start()); // truncated by precision
-                $task->setEnd($slot->getPeriod()->end()); // truncated by precision
+                $task->setStart($slot->getStart()); // truncated by precision
+                $task->setEnd($slot->getEnd()); // truncated by precision
                 $task->setOnPremises(false);
 
                 if (count($errors = $this->validator->validate($task)) > 0) {
@@ -123,8 +124,8 @@ ORDER BY recipient_id
 
                 $this->entityManager->persist($task);
 
-                $slot->assignTask($task);
-                $schedule->addTask($task);
+                $slot->addTask($task);
+                $consultantSchedule->addTask($task);
 
 //                $this->output->writeln(sprintf('[%s] Allocated slot %s to service "%s" for client "%s"',
 //                    $consultant->getName(),
@@ -134,11 +135,15 @@ ORDER BY recipient_id
 //                ));
             }
 
-            $this->entityManager->persist($schedule);
+//            $this->entityManager->persist($consultantSchedule);
+            $schedule->merge($consultantSchedule);
 
-            $this->output->writeln(sprintf("<info>SCHEDULE for %s</info> %s", $consultant->getName(), $schedule->getStats()));
+            $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
         }
 
+        $this->output->writeln("<info>Generated schedule</info> {$schedule->getStats()}");
+
+        $this->entityManager->persist($schedule);
         $this->entityManager->flush();
 
         return Command::SUCCESS;

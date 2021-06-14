@@ -42,6 +42,7 @@
     "require-dev": {
         "dama/doctrine-test-bundle": "^6.6",
         "doctrine/doctrine-fixtures-bundle": "^3.4",
+        "jetbrains/phpstorm-attributes": "^1.0",
         "overtrue/phplint": "^2.4",
         "phpunit/phpunit": "^9.5",
         "symfony/browser-kit": "5.3.*",
@@ -88,8 +89,11 @@
             "Google\\Task\\Composer::cleanup"
         ],
         "test": [
-            "phplint --no-progress",
-            "bin/phpunit --colors=never"
+            "phplint --no-interaction --no-progress --warning",
+            "bin/console --env=test --quiet --no-interaction doctrine:database:create --if-not-exists",
+            "bin/console --env=test --quiet --no-interaction doctrine:schema:drop --force",
+            "bin/console --env=test --quiet --no-interaction doctrine:schema:create",
+            "bin/phpunit"
         ]
     },
     "conflict": {

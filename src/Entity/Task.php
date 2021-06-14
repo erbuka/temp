@@ -27,6 +27,11 @@ class Task
     private \DateTimeInterface $start;
 
     /**
+     * The exact time at which the task ends.
+     * This may overlap with another task's start, in which case
+     * it has to be interpreted as "just before the other task starts"
+     * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
+     *
      * @ORM\Column(type="datetime", nullable=false)
      * @CustomAssert\DateTimeUTC()
      */

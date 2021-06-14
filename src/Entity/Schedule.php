@@ -7,6 +7,8 @@ use App\Slot;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use JetBrains\PhpStorm\ArrayShape;
+use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
 use Spatie\Period\Precision;
 use Symfony\Component\Uid\Uuid;
@@ -36,7 +38,7 @@ class Schedule
         '2021-12-31', // Prefestivo
         '2022-01-01', // Capodanno
 
-        '2022-01-06', // Prefestivo
+        '2022-01-05', // Prefestivo
         '2022-01-06', // Befana
 
         '2022-04-16', // Prefestivo
@@ -66,6 +68,7 @@ class Schedule
         '2022-12-26', // Santo Stefano
     ];
     const DATE_NOTIME = 'Y-m-d';
+    const DATE_SLOTHASH = 'YmdH';
 
     //region Persisted fields
 
@@ -104,6 +107,8 @@ class Schedule
     //endregion Persisted fields
 
     private \SplFixedArray $slots;
+    /** @var array<string, Slot> */
+    private array $dayHourSlotMap;
     private Consultant $consultant;
     private Period $period;
 
@@ -115,7 +120,7 @@ class Schedule
     {
         $this->tasks = new ArrayCollection();
         $this->uuid = Uuid::v4();
-        $this->period = Period::make($fromDay, $toDay, Precision::DAY());
+        $this->period = Period::make($fromDay, $toDay, Precision::DAY(), Boundaries::EXCLUDE_NONE());
         $this->from = $this->period->start();
         $this->to = $this->period->end();
 
@@ -124,7 +129,10 @@ class Schedule
 
     private function generateSlots()
     {
+        assert(!isset($this->slots), "Refusing to overwrite existing slots in Schedule");
+
         $eligibleDays = [];
+        $slotsMap = [];
 
         foreach ($this->period as $day) {
             /** @var \DateTimeImmutable $day */
@@ -143,22 +151,28 @@ class Schedule
             $dayStart->setTime(8, 0);
             $dayEnd = (clone $dayStart)->setTime(18, 0);
 
-            $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR());
+            $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
             foreach ($businessHours as $hour) {
                 /** @var \DateTimeImmutable $hour */
-                $eligibleDays[] = new Slot($hour);
+                $slot = new Slot($hour);
+                $hash = $slot->getStart()->format(static::DATE_SLOTHASH);
+                assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
+
+                $slotsMap[$hash] = $slot;
+                $eligibleDays[] = $slot;
             }
         }
 
         $this->slots = \SplFixedArray::fromArray($eligibleDays);
+        $this->dayHourSlotMap = $slotsMap;
     }
 
-    /**
-     * @return Slot[]
-     */
-    public function getSlots(): \SplFixedArray
+    private function getSlots(): \SplFixedArray
     {
-        return $this->slots; // by reference
+        if (!$this->slots)
+            $this->generateSlots();
+
+        return $this->slots;
     }
 
     /**
@@ -168,11 +182,11 @@ class Schedule
      */
     public function getRandomFreeSlot(\DateTimeInterface $after = null, \DateTimeInterface $before = null): ?Slot
     {
-        // More efficient way: randomly pick a slot, then move backwords or forwards (random) and return the first free slot.
+        $slots = $this->getSlots();
 
-        $index = rand(0, $this->slots->getSize() - 1);
+        $index = rand(0, $slots->getSize() - 1);
         /** @var Slot $slot */
-        $slot = $this->slots[$index];
+        $slot = $slots[$index];
 
         if ($slot->isFree())
             return $slot;
@@ -188,7 +202,8 @@ class Schedule
 
     public function getClosestFreeSlot(int $slotIndex, string $direction = 'both'): ?Slot
     {
-        assert(-1 < $slotIndex && $slotIndex < $this->slots->getSize(), "Given slot index {$slotIndex} out of bounds [0, {$this->slots->getSize()}]");
+        $slots = $this->getSlots();
+        assert(-1 < $slotIndex && $slotIndex < $slots->getSize(), "Given slot index {$slotIndex} out of bounds [0, {$slots->getSize()}]");
 
         $closestBefore = $closestAfter = null;
         $closestBeforeDistance = $closestAfterDistance = INF;
@@ -197,9 +212,9 @@ class Schedule
         if ($direction == 'both' || $direction == 'before') {
             for ($offset = 0, $idx = $slotIndex; $idx >= 0; $idx =  --$offset + $slotIndex) {
                 /** @var Slot $slot */
-                $slot = $this->slots[$idx];
+                $slot = $slots[$idx];
 
-                if (!$slot->isAllocated()) {
+                if ($slot->isFree()) {
                     $closestBefore = $slot;
                     $closestBeforeDistance = $offset;
                     break;
@@ -209,11 +224,11 @@ class Schedule
 
         // find closest after, including the initial slot
         if ($direction == 'both' || $direction == 'after') {
-            for ($offset = 0, $idx = $slotIndex; $idx < $this->slots->getSize(); $idx = ++$offset + $slotIndex) {
+            for ($offset = 0, $idx = $slotIndex; $idx < $slots->getSize(); $idx = ++$offset + $slotIndex) {
                 /** @var Slot $slot */
-                $slot = $this->slots[$idx];
+                $slot = $slots[$idx];
 
-                if (!$slot->isAllocated()) {
+                if ($slot->isFree()) {
                     $closestAfter = $slot;
                     $closestAfterDistance = $offset;
                     break;
@@ -244,25 +259,74 @@ class Schedule
 
     public function getStats(): string
     {
+        $slots = $this->getSlots();
         $allocatedSlots = 0;
-        $slotsCount = $this->slots->getSize(); // ::count() and count() are equivalent to ::getSize()
+        $slotsCount = $slots->getSize(); // ::count() and count() are equivalent to ::getSize()
 
-        foreach ($this->slots as $slot) {
+        foreach ($slots as $slot) {
             /** @var Slot $slot */
             if ($slot->isAllocated())
                 $allocatedSlots++;
         }
 
-        return sprintf("Schedule period=%s, slots=%d, allocated_slots=%d",
+        return sprintf("id=%s period=%s, slots=%d, allocated_slots=%d tasks=%d",
+    $this->id ?? $this->getUuid()->toRfc4122(),
             $this->period->asString(),
             $slotsCount,
             $allocatedSlots,
+            count($this->tasks)
         );
     }
 
+    /**
+     * A task is a contiguous amount of time that will start at some slot and end in another.
+     */
     public function loadTasksIntoSlots()
     {
-        throw new \RuntimeException('Not Implemented');
+        $tasks = $this->getTasks();
+
+        // hash each slot by datetime Ymd-h
+        foreach ($tasks as $task) {
+            /** @var Task $task */
+            $this->loadTaskIntoSlot($task);
+        }
+    }
+
+    protected function loadTaskIntoSlot(Task $task)
+    {
+        // A task is considered to belong to a slot iff its starting
+        $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
+
+        foreach ($period as $hour) {
+            $key = $hour->format(static::DATE_SLOTHASH);
+            if (!isset($this->dayHourSlotMap[$key])) throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+            assert($this->dayHourSlotMap[$key] instanceof Slot, "Map does not return a slot");
+
+            $this->dayHourSlotMap[$key]->addTask($task);
+        }
+    }
+
+    /**
+     * and could deal with straight tasks considering the fact that
+     * loading tasks (from the database) into slots is the same problem.
+     *
+     * Sets $this as the owning schedule of each merged task.
+     */
+    public function merge(Schedule ...$sources)
+    {
+        foreach ($sources as $schedule) {
+            foreach ($schedule->getTasks() as $task) {
+                /** @var Task $task */
+                $this->loadTaskIntoSlot($task);
+                $task->setSchedule($this);
+                $this->addTask($task);
+            }
+        }
+    }
+
+    public function getSlot(Task $task): Slot
+    {
+
     }
 
     //region Persisted fields accessors

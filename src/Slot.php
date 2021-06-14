@@ -4,7 +4,10 @@
 namespace App;
 
 
+use App\Entity\Consultant;
 use App\Entity\Task;
+use JetBrains\PhpStorm\Pure;
+use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
 use Spatie\Period\Precision;
 
@@ -20,10 +23,7 @@ use Spatie\Period\Precision;
 class Slot
 {
     private Period $period;
-
-    private \DateTimeInterface $start;
-
-    private Task $task;
+    private \SplObjectStorage $tasks;
 
     public function __construct(\DateTimeInterface $start, \DateInterval $interval = null)
     {
@@ -33,36 +33,66 @@ class Slot
         $start = \DateTimeImmutable::createFromInterface($start);
         $end = $start->add($interval);
 
-        $this->period = Period::make($start, $end, Precision::HOUR());
+        $this->period = Period::make($start, $end, Precision::HOUR(), Boundaries::EXCLUDE_END());
+        $this->tasks = new \SplObjectStorage();
+
+        assert($this->period->length() === 1, "Created period length different than 1 hour: {$this->period->length()}");
         assert($start->format('Y-m-d') === $end->format('Y-m-d'), "Slot period must not cross days {$this->period->asString()}");
     }
 
-    public function isAllocated(): bool
+    #[Pure] public function isAllocated(): bool
     {
-        return isset($this->task);
+        return !$this->isFree();
     }
 
-    public function isFree(): bool
+    #[Pure] public function isFree(): bool
     {
-        return !$this->isAllocated();
+        return count($this->tasks) === 0;
     }
 
-    public function assignTask(Task $task)
+    public function addTask(Task $task)
     {
-        $this->task = $task;
+        $this->tasks->attach($task);
     }
 
-    public function getPeriod(): Period
+    public function removeTask(Task $task)
+    {
+        $this->tasks->detach($task);
+    }
+
+    public function getTasks(): array
+    {
+        return iterator_to_array($this->tasks);
+    }
+
+    #[Pure] public function getPeriod(): Period
     {
         return $this->period;
     }
 
-    public function getStart(): \DateTimeInterface
+    #[Pure] public function getStart(): \DateTimeInterface
     {
         return $this->period->start();
     }
 
-    public function getEnd(): \DateTimeInterface
+    public function isAllocatedToConsultant(Consultant $consultant): bool
+    {
+        foreach ($this->tasks as $task) {
+            /** @var Task $task */
+            if ($task->getConsultant() === $consultant)
+                return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns the *excluded* end of the period.
+     * This is important because individual Tasks will be stored using the excluded end as their end time
+     * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
+     * @return \DateTimeInterface
+     */
+    #[Pure] public function getEnd(): \DateTimeInterface
     {
         return $this->period->end();
     }
