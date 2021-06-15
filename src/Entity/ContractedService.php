@@ -89,6 +89,11 @@ class ContractedService
         return $this->getContract()->getRecipient()->getName();
     }
 
+    public function getRecipient(): Recipient
+    {
+        return $this->getContract()->getRecipient();
+    }
+
     public function getHours(): int
     {
         return $this->getService()->getHours();

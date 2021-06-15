@@ -5,6 +5,9 @@ namespace App;
 
 
 use App\Entity\Consultant;
+use App\Entity\ContractedService;
+use App\Entity\Recipient;
+use App\Entity\Service;
 use App\Entity\Task;
 use JetBrains\PhpStorm\Pure;
 use Spatie\Period\Boundaries;
@@ -24,12 +27,14 @@ class Slot
 {
     private Period $period;
     private \SplObjectStorage $tasks;
+    private int $index;
 
-    public function __construct(\DateTimeInterface $start, \DateInterval $interval = null)
+    public function __construct(int $index, \DateTimeInterface $start, \DateInterval $interval = null)
     {
         if (!$interval)
             $interval = new \DateInterval('PT1H');
 
+        $this->index = $index;
         $start = \DateTimeImmutable::createFromInterface($start);
         $end = $start->add($interval);
 
@@ -86,6 +91,17 @@ class Slot
         return false;
     }
 
+    public function isAllocatedToContractedService(ContractedService $cs): bool
+    {
+        foreach ($this->tasks as $task) {
+            /** @var Task $task */
+            if ($task->getConsultant() === $cs->getConsultant() && $task->getService() === $cs->getService() && $task->getRecipient() === $cs->getRecipient())
+                return true;
+        }
+
+        return false;
+    }
+
     /**
      * Returns the *excluded* end of the period.
      * This is important because individual Tasks will be stored using the excluded end as their end time
@@ -95,5 +111,10 @@ class Slot
     #[Pure] public function getEnd(): \DateTimeInterface
     {
         return $this->period->end();
+    }
+
+    public function getIndex(): int
+    {
+        return $this->index;
     }
 }

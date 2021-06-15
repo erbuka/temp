@@ -41,19 +41,21 @@ class Task
     /**
      * @ORM\Column(type="boolean")
      */
+    #[Assert\NotNull]
     private bool $onPremises;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Consultant::class)
-     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
-     */
-    private Consultant $consultant;
-
-    /**
-     * @ORM\ManyToOne(targetEntity=Recipient::class)
+     * @ORM\ManyToOne(targetEntity=ContractedService::class)
      * @ORM\JoinColumn(nullable=false)
      */
-    private Recipient $recipient;
+    private ContractedService $contractedService;
+
+    /**
+     * Meant to be used when directly querying the database via SQL.
+     * @ORM\Column(type="string", length=150)
+     */
+    #[Assert\NotBlank]
+    private string $consultantName;
 
     /**
      * Meant to be used when directly querying the database via SQL.
@@ -63,10 +65,11 @@ class Task
     private string $recipientName;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Service::class)
-     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
+     * Meant to be used when directly querying the database via SQL.
+     * @ORM\Column(type="string", length=255)
      */
-    private Service $service;
+    #[Assert\NotBlank]
+    private string $serviceName;
 
     /**
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
@@ -79,14 +82,29 @@ class Task
         return $this->id;
     }
 
-    public function getRecipient(): Recipient
+    public function getContractedService(): ContractedService
     {
-        return $this->recipient;
+        return $this->contractedService;
     }
 
-    public function setRecipient(Recipient $recipient): self
+    public function setContractedService(ContractedService $cs): self
     {
-        $this->recipient = $recipient;
+        $this->contractedService = $cs;
+        $this
+            ->setConsultant($cs->getConsultant())
+            ->setRecipient($cs->getRecipient())
+            ->setService($cs->getService());
+
+        return $this;
+    }
+
+    public function getRecipient(): Recipient
+    {
+        return $this->contractedService->getRecipient();
+    }
+
+    private function setRecipient(Recipient $recipient): self
+    {
         $this->recipientName = $recipient->getName();
 
         return $this;
@@ -94,24 +112,24 @@ class Task
 
     public function getConsultant(): Consultant
     {
-        return $this->consultant;
+        return $this->contractedService->getConsultant();
     }
 
-    public function setConsultant(Consultant $consultant): self
+    private function setConsultant(Consultant $consultant): self
     {
-        $this->consultant = $consultant;
+        $this->consultantName = $consultant->getName();
 
         return $this;
     }
 
     public function getService(): Service
     {
-        return $this->service;
+        return $this->contractedService->getService();
     }
 
-    public function setService(Service $service): self
+    private function setService(Service $service): self
     {
-        $this->service = $service;
+        $this->serviceName = $service->getName();
 
         return $this;
     }

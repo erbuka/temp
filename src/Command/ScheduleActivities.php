@@ -11,6 +11,7 @@ use App\Entity\Recipient;
 use App\Entity\Service;
 use App\Entity\Task;
 use App\Entity\Schedule;
+use App\Slot;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
@@ -57,7 +58,7 @@ class ScheduleActivities extends Command
         $this->validator = $validator;
 
         $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-01T00:00:00Z');
-        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-05-30T23:59:59Z');
+        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-06-30T23:59:59Z');
 
         parent::__construct();
     }
@@ -72,48 +73,28 @@ class ScheduleActivities extends Command
         $this->preloadServices();
         $schedule = new Schedule($this->from, $this->to);
 
-        $recipientsSQL = "
-SELECT recipient_id, service FROM `". static::CONTRACTED_SERVICES_VIEW ."`
-WHERE consultant = :consultant
-GROUP BY recipient_id, service
-ORDER BY recipient_id
-";
-
         foreach ($this->entityManager->getRepository(Consultant::class)->findAll() as $consultant) {
             /** @var Consultant $consultant */
-//            if ($consultant->getName() !== 'Belelli Fiorenzo') continue;
-
             $consultantSchedule = new Schedule($this->from, $this->to);
 
             // !!! TODO for each service, $scheduler->getRandomFreeSlot($service->start, $service->end)
             // TODO check start and end bounderies, e.g. end=2021-10-01T00:00 must include somehow 2021-10-01T18:00
 
-            // Allocate 1 slot for each (client, service)
-            foreach ($this->connection->executeQuery($recipientsSQL, ['consultant' => $consultant->getName()])->iterateAssociative() as [
-                'recipient_id' => $recipientId,
-                'service' => $serviceName
-            ]) {
-                /** @var Recipient $recipient */
-                $recipient = $this->entityManager->getRepository(Recipient::class)->find($recipientId);
-                /** @var Service $service */
-                $service = $this->entityManager->getRepository(Service::class)->find($serviceName);
+            // Allocate Initial Slot for each contracted service
+            /** @var array<int, Slot> $initialSlots */
+            $initialSlots = [];
+            $contractedServices = $this->entityManager->getRepository(ContractedService::class)->findBy(['consultant' => $consultant]);
+            foreach ($contractedServices as $contractedService) {
+                $recipient = $contractedService->getRecipient();
+                $service = $contractedService->getService();
 
-                assert($recipient !== null, "Unable to lookup recipient {$recipientId}");
-                assert($service !== null, "Unable to lookup service {$serviceName}");
+                assert($recipient !== null, "ContractedService has recipient === null");
+                assert($service !== null, "ContractedService has service === null");
 
-                // Allocate recipient
                 $slot = $consultantSchedule->getRandomFreeSlot($service->getFromDate(), $service->getToDate());
 
-                // Select service by ranking all services belonging to this client
-
-//                $services = $this->rankServices($slot->getPeriod()->start(), $recipient, $consultant);
-//                assert(count($services) > 0, "Not implemented: handle the case where there are no services for (client, slot_date)");
-//                $service = current($services);
-
                 $task = new Task();
-                $task->setConsultant($consultant);
-                $task->setRecipient($recipient);
-                $task->setService($service);
+                $task->setContractedService($contractedService);
                 $task->setStart($slot->getStart()); // truncated by precision
                 $task->setEnd($slot->getEnd()); // truncated by precision
                 $task->setOnPremises(false);
@@ -126,6 +107,7 @@ ORDER BY recipient_id
 
                 $slot->addTask($task);
                 $consultantSchedule->addTask($task);
+                $initialSlots[] = $slot;
 
 //                $this->output->writeln(sprintf('[%s] Allocated slot %s to service "%s" for client "%s"',
 //                    $consultant->getName(),
@@ -133,7 +115,65 @@ ORDER BY recipient_id
 //                    $service->getName(),
 //                    $recipient->getName()
 //                ));
-            }
+            };
+            assert(count($initialSlots) === count($contractedServices), "Did not allocate 1 slot for each contracted service");
+
+            // 1. for each initial slot, expand the slot until either 1) no more free slots left, 2) all hours have been allocated
+            $watchdog = 10000;
+            $csHoursMap = new \SplObjectStorage();
+            do {
+                foreach ($initialSlots as $initialSlot) {
+                    assert(count($initialSlot->getTasks()) === 1);
+                    assert($watchdog-- > 0);
+
+                    /** @var Task $initialTask */
+                    $initialTask = current($initialSlot->getTasks());
+                    $contractedService = $initialTask->getContractedService();
+                    $allocatedSlotsCount = $consultantSchedule->countSlotsAllocatedToContractedService($contractedService);
+                    $hoursLeft = $contractedService->getService()->getHours() - $allocatedSlotsCount;
+                    assert($hoursLeft >= 0, "left={$hoursLeft} for ('{$contractedService->getService()->getName()}', '{$contractedService->getRecipientName()}')");
+
+                    if ($hoursLeft <= 0) {
+//                        $this->output->writeln(sprintf("<info>ALL HOURS ALLOCATED FOR</info> '%s' '%s'", $contractedService->getService()->getName(), $contractedService->getRecipientName()));
+                        continue;
+                    }
+
+                    $slots = $consultantSchedule->allocateContractedServicePass($initialSlot, $contractedService, min($hoursLeft, 5));
+
+                    usort($slots, fn(/** @var Slot $s1 */ $s1, /** @var Slot $s2 */ $s2) => $s1->getStart() <=> $s2->getStart());
+
+                    if (empty($slots)) {
+                        throw new \LogicException("no more slots available");
+                    }
+
+                    $task = new Task();
+                    $task->setContractedService($initialTask->getContractedService());
+                    $task->setStart(reset($slots)->getStart());
+                    $task->setEnd(end($slots)->getEnd());
+                    $task->setOnPremises(false);
+                    $consultantSchedule->addTask($task);
+
+                    if (count($errors = $this->validator->validate($task)) > 0) {
+                        throw new \Exception("Cannot validate task ({$task->getConsultant()->getName()}, {$task->getRecipient()->getName()}, {$task->getService()->getName()}): ". $errors);
+                    }
+
+                    $this->entityManager->persist($task);
+
+                    foreach ($slots as $slot) {
+                        /** @var Slot $slot */
+                        $slot->addTask($task);
+                    }
+
+                    // Updates allocataed hours for this contracted service
+                    $allocatedSlotsCount = $consultantSchedule->countSlotsAllocatedToContractedService($contractedService);
+                    $csHoursMap[$contractedService] = $contractedService->getService()->getHours() - $allocatedSlotsCount;
+
+                    $this->output->writeln("Allocated {$allocatedSlotsCount} slots to ('{$contractedService->getService()->getName()}' '{$contractedService->getRecipientName()}'");
+                }
+
+                $toAllocate = array_filter(iterator_to_array($csHoursMap), fn($cs) => $csHoursMap[$cs] > 0);
+                $this->output->writeln("<info>TO ALLOCATE</info> another ". count($toAllocate) ." contracted services for {$consultant->getName()}");
+            } while (count($toAllocate) > 0);
 
 //            $this->entityManager->persist($consultantSchedule);
             $schedule->merge($consultantSchedule);
@@ -204,5 +244,13 @@ ORDER BY recipient_id
 
             $this->services[$service->getName()] = $service;
         }
+    }
+
+    /**
+     * @param Schedule $schedule assumed to contain only tasks for a single consultant
+     */
+    private function allocationPass(Schedule $schedule)
+    {
+
     }
 }

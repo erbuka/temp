@@ -66,31 +66,30 @@ SQL;
     #[Route('/schedule', name: 'schedule')]
     public function scheduling(EntityManagerInterface $em): Response
     {
-        $schedules = $em->getRepository(Schedule::class)->findAll();
-        assert(count($schedules) > 0, "No schedules found");
+        $schedule = current(array_reverse($em->getRepository(Schedule::class)->findAll()));
+        assert($schedule, "No schedule found");
 
         // TODO assumes each task occupies 1 hour slot. This won't hold true when adjacent slot aggregation is implemented.
         $data = [];
 
-        foreach ($schedules as $schedule) {
-            /** @var Schedule $schedule */
-            foreach ($schedule->getTasks() as $task) {
-                /** @var Task $task */
-                $consultant = $task->getConsultant()->getName();
+        /** @var Schedule $schedule */
+        foreach ($schedule->getTasks() as $task) {
+            /** @var Task $task */
+            $consultant = $task->getConsultant()->getName();
 
-                if (!isset($data[$consultant]))
-                    $data[$consultant] = [];
+            if (!isset($data[$consultant]))
+                $data[$consultant] = [];
 
-                // assumes task duration does not cross the day!
-                assert(($h = $task->getStart()->diff($task->getEnd())->h) === 1, "Task lasts {$h}>1 hours");
+            // assumes task duration does not cross the day!
+            $h = $task->getStart()->diff($task->getEnd())->h;
 
-                $data[$consultant][] = [
-                    'hour_slot' => intval($task->getStart()->format('H')),  // 00:00 => 0, 01:00 => 1, ...
-                    'day_slot' => $schedule->getFrom()->diff($task->getStart())->days,
-                    'recipient' => $task->getRecipient()->getName(),
-                    'service' => $task->getService()->getName(),
-                ];
-            }
+            $data[$consultant][] = [
+                'hour_slot' => intval($task->getStart()->format('H')),  // 00:00 => 0, 01:00 => 1, ...
+                'day_slot' => $schedule->getFrom()->diff($task->getStart())->days,
+                'recipient' => $task->getRecipient()->getName(),
+                'service' => $task->getService()->getName(),
+                'hours' => $h
+            ];
         }
 
         return new JsonResponse($data);

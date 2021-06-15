@@ -107,7 +107,7 @@ class Schedule
     //endregion Persisted fields
 
     private \SplFixedArray $slots;
-    /** @var array<string, Slot> */
+    /** @var array<string, Slot> e.g. '2021020318' => Slot */
     private array $dayHourSlotMap;
     private Consultant $consultant;
     private Period $period;
@@ -154,12 +154,14 @@ class Schedule
             $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
             foreach ($businessHours as $hour) {
                 /** @var \DateTimeImmutable $hour */
-                $slot = new Slot($hour);
+                $slot = new Slot(count($eligibleDays), $hour);
                 $hash = $slot->getStart()->format(static::DATE_SLOTHASH);
                 assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
 
                 $slotsMap[$hash] = $slot;
                 $eligibleDays[] = $slot;
+
+                assert($slot->getIndex() === array_search($slot, $eligibleDays, strict: true));
             }
         }
 
@@ -197,11 +199,12 @@ class Schedule
             default => 'both'
         };
 
-        return $this->getClosestFreeSlot($index, $direction);
+        return $this->getClosestFreeSlot($slot, $direction);
     }
 
-    public function getClosestFreeSlot(int $slotIndex, string $direction = 'both'): ?Slot
+    public function getClosestFreeSlot(Slot $slot, string $direction = 'both'): ?Slot
     {
+        $slotIndex = $slot->getIndex();
         $slots = $this->getSlots();
         assert(-1 < $slotIndex && $slotIndex < $slots->getSize(), "Given slot index {$slotIndex} out of bounds [0, {$slots->getSize()}]");
 
@@ -299,7 +302,8 @@ class Schedule
 
         foreach ($period as $hour) {
             $key = $hour->format(static::DATE_SLOTHASH);
-            if (!isset($this->dayHourSlotMap[$key])) throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+            if (!isset($this->dayHourSlotMap[$key]))
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
             assert($this->dayHourSlotMap[$key] instanceof Slot, "Map does not return a slot");
 
             $this->dayHourSlotMap[$key]->addTask($task);
@@ -327,6 +331,79 @@ class Schedule
     public function getSlot(Task $task): Slot
     {
 
+    }
+
+    /**
+     * @param Slot $initialSlot
+     * @param ContractedService $contractedServiceService
+     * @param int $maxSlots
+     * @return Slot[]
+     */
+    public function allocateContractedServicePass(Slot $initialSlot, ContractedService $contractedServiceService, int $maxSlots = 5): array
+    {
+        assert($initialSlot->isAllocated(), "Initial slot should be allocated");
+
+        $adjacentSlots = [];
+
+        $direction = match (rand(0,1)) {
+            0 => 'after',
+            1 => 'before',
+        };
+        /** @var ?Slot $next */
+        $next = $this->getClosestFreeSlot($initialSlot, $direction);
+        if (!$next) {
+            $direction = $direction == 'before' ? 'after' : 'before';
+            $next = $this->getClosestFreeSlot($initialSlot, $direction);
+        }
+
+        if (!$next) throw new \RuntimeException('No more slots to allocate');
+        assert($next->isFree());
+
+        while ($next->isFree() && count($adjacentSlots) < $maxSlots) {
+            $adjacentSlots[] = $next;
+
+            $offset = match ($direction) {
+                'after' => 1,
+                'before' => -1,
+            };
+
+            $idx = $next->getIndex() + $offset;
+            if ($idx < 0 || $idx >= $this->slots->getSize())
+                break; // out of bounds
+
+            $next = $this->slots[$next->getIndex() + $offset];
+
+            // Avoid crossing days
+            if ($next->getStart()->format(static::DATE_NOTIME) != current($adjacentSlots)->getStart()->format(static::DATE_NOTIME))
+                break;
+        }
+
+        foreach ($adjacentSlots as $i => $slot) {
+            if (!isset($adjacentSlots[$i + 1])) break;
+
+            assert($slot->getPeriod()->touchesWith($adjacentSlots[$i + 1]->getPeriod()), sprintf("Non contiguous slots detected idx={$i},%s", $i+1));
+        }
+
+        assert(count($adjacentSlots) <= $maxSlots, sprintf("Returning more than requested slots: requested=%d returned=%d", $maxSlots, count($adjacentSlots)));
+
+        return $adjacentSlots;
+    }
+
+    public function countSlotsAllocatedToContractedService(ContractedService $cs): int
+    {
+        $count = 0;
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocatedToContractedService($cs))
+                $count++;
+        }
+
+        return $count;
+    }
+
+    public function getConsultantSchedule(Consultant $consultant): Schedule
+    {
+        throw new \RuntimeException('Not implemented');
     }
 
     //region Persisted fields accessors

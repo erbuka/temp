@@ -20,9 +20,7 @@
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.6.0/locales-all.js"></script>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@5.6.0/main.min.css">
 
-        {% for style in styles %}
-            <link rel="stylesheet" href="/{{ base }}/assets/{{ style.getRelativePathname() }}">
-        {% endfor %}
+        <link rel="stylesheet" href="/{{ base }}/assets/styles/front.css">
 
         {% for script in scripts %}
             <script type="module" src="/{{ base }}/{{ script.getRelativePathname() }}"></script>
