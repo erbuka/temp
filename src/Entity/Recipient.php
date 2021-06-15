@@ -4,7 +4,6 @@ namespace App\Entity;
 
 use App\Repository\RecipientRepository;
 use Doctrine\ORM\Mapping as ORM;
-use JetBrains\PhpStorm\Deprecated;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -12,7 +11,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * @ORM\Entity(repositoryClass=RecipientRepository::class)
  */
 #[UniqueEntity(['name', 'vatId', 'fiscalCode'])]
-class Recipient
+class Recipient implements \Stringable
 {
     /**
      * @ORM\Id
@@ -102,5 +101,10 @@ class Recipient
     public function getTaxId(): string
     {
         return $this->vatId ?? $this->fiscalCode;
+    }
+
+    public function __toString(): string
+    {
+        return $this->getName();
     }
 }

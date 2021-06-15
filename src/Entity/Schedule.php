@@ -13,7 +13,8 @@ use Spatie\Period\Period;
 use Spatie\Period\Precision;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
-use App\Validator\Constraints as CustomAssert;
+use App\Validator\Constraints as AppAssert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
@@ -86,16 +87,16 @@ class Schedule
 
     /**
      * @ORM\Column(name="`from`", type="datetime", nullable=false)
-     * @CustomAssert\DateTimeUTC()
      */
     #[Assert\NotNull]
+    #[AppAssert\DateTimeUTC]
     private \DateTimeInterface $from;
 
     /**
      * @ORM\Column(name="`to`", type="datetime", nullable=false)
-     * @CustomAssert\DateTimeUTC()
      */
     #[Assert\NotNull]
+    #[AppAssert\DateTimeUTC]
     private \DateTimeInterface $to;
 
     /**
@@ -404,6 +405,23 @@ class Schedule
     public function getConsultantSchedule(Consultant $consultant): Schedule
     {
         throw new \RuntimeException('Not implemented');
+    }
+
+    /**
+     * Should use only tasks.
+     * Should not depend on EntityManager or other services. If this is needed, refactor to external constraint.
+     * Advantage of using callbacks: access to private members.
+     *
+     * @param Schedule $schedule
+     * @param ExecutionContextInterface $context
+     * @param $payload
+     */
+    #[Assert\Callback]
+    public static function validate(Schedule $schedule, ExecutionContextInterface $context, $payload)
+    {
+        // needs tasks, access to private state and methods
+
+        // Validator constraint does not access private state
     }
 
     //region Persisted fields accessors

@@ -37,7 +37,6 @@ class ScheduleActivities extends Command
     protected \DateTimeInterface $to;
     protected \DateTimeZone $timezone;
     protected EntityManagerInterface $entityManager;
-    protected Connection $rawConnection;
     protected Connection $connection;
     protected ValidatorInterface $validator;
     protected OutputInterface $output;
@@ -50,10 +49,9 @@ class ScheduleActivities extends Command
 
 //    private Schedule $schedule;
 
-    public function __construct(EntityManagerInterface $entityManager, Connection $rawConnection, Connection $defaultConnection,  ValidatorInterface $validator)
+    public function __construct(EntityManagerInterface $entityManager, Connection $defaultConnection,  ValidatorInterface $validator)
     {
         $this->entityManager = $entityManager;
-        $this->rawConnection = $rawConnection;
         $this->connection = $defaultConnection;
         $this->validator = $validator;
 

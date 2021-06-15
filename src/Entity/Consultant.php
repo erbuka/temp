@@ -10,7 +10,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * @ORM\Entity(repositoryClass=ConsultantRepository::class)
  */
-class Consultant
+class Consultant implements \Stringable
 {
     /**
      * @ORM\Id
@@ -63,5 +63,10 @@ class Consultant
         $this->jobTitle = $jobTitle;
 
         return $this;
+    }
+
+    public function __toString(): string
+    {
+        return $this->getName();
     }
 }

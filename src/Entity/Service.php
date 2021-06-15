@@ -12,7 +12,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
  * @ORM\Entity(repositoryClass=ServiceRepository::class)
  */
 #[UniqueEntity('name')]
-class Service
+class Service implements \Stringable
 {
     /**
      * @ORM\Id
@@ -64,16 +64,16 @@ class Service
      * Date before which this service should not be performed.
      *
      * @ORM\Column(type="date", nullable=true)
-     * @AppAssert\DateTimeUTC()
      */
+    #[AppAssert\DateTimeUTC]
     private ?\DateTimeInterface $fromDate;
 
     /**
      * Date after which this service should not be performed.
      *
      * @ORM\Column(type="date", nullable=true)
-     * @AppAssert\DateTimeUTC()
      */
+    #[AppAssert\DateTimeUTC]
     private ?\DateTimeInterface $toDate;
 
     public function getName(): string
@@ -204,5 +204,10 @@ class Service
         $this->toDate = $to;
 
         return $this;
+    }
+
+    public function __toString(): string
+    {
+        return $this->getName();
     }
 }

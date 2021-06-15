@@ -97,11 +97,13 @@ class TaskController extends AbstractController
                 'id' => $task->getId(),
                 'start' => $task->getStart()->format(DATE_ATOM),
                 'end' => $task->getEnd()->format(DATE_ATOM),
-                'title' => "{$task->getConsultant()->getName()} - {$task->getRecipient()->getName()}",
+                'title' => "{$task->getService()} - {$task->getRecipient()->getHeadquarters()} - {$task->getRecipient()}",
                 'extendedProps' => [
                     'on_premises' => $task->getOnPremises(),
                     'consultant' => $task->getConsultant()->getName(),
                     'recipient' => $task->getRecipient()->getName(),
+                    'recipient_location' => $task->getRecipient()->getHeadquarters(),
+                    'service' => $task->getService()->getName(),
                     'schedule_id' => $task->getSchedule()->getUuid()->toRfc4122()
                 ]
             ];

@@ -4,7 +4,7 @@ namespace App\Entity;
 
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
-use App\Validator\Constraints as CustomAssert;
+use App\Validator\Constraints as AppAssert;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -21,9 +21,9 @@ class Task
 
     /**
      * @ORM\Column(type="datetime", nullable=false)
-     * @CustomAssert\DateTimeUTC()
      */
     #[Assert\NotNull]
+    #[AppAssert\BusinessHours(from: '08:00', to: '19:00')]
     private \DateTimeInterface $start;
 
     /**
@@ -33,9 +33,9 @@ class Task
      * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
      *
      * @ORM\Column(type="datetime", nullable=false)
-     * @CustomAssert\DateTimeUTC()
      */
     #[Assert\NotNull]
+    #[AppAssert\BusinessHours(from: '08:00', to: '19:00')]
     private \DateTimeInterface $end;
 
     /**
