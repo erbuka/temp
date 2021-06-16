@@ -1,7 +1,7 @@
 <?php
 
 
-namespace App\Validator\Constraints;
+namespace App\Validator;
 
 
 use Symfony\Component\Validator\Constraint;
@@ -10,7 +10,7 @@ use Symfony\Component\Validator\Exception\ConstraintDefinitionException;
 #[\Attribute(\Attribute::TARGET_PROPERTY, \Attribute::TARGET_METHOD)]
 class BusinessHours extends Constraint
 {
-    public $message = 'The datetime "{{ date }}" is outside the business hours range from {{ start }} to {{ end }}';
+    public $message = 'The datetime "{{ date }}" is outside business hours';
 
     public \DateTimeInterface $from;
     public \DateTimeInterface $to;
@@ -31,5 +31,7 @@ class BusinessHours extends Constraint
         if (false === $this->to = \DateTimeImmutable::createFromFormat('H:i', $to)) {
             throw new ConstraintDefinitionException(sprintf('Constraint %s requires "to" option to be in H:i format (e.g. 09:45). %s given.', static::class, $to));
         }
+
+        $this->message = sprintf('The datetime "{{ date }}" is outside the business hours range from %s to %s', $this->from->format('H:i'), $this->to->format('H:i'));
     }
 }

@@ -4,7 +4,7 @@ namespace App\Entity;
 
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
-use App\Validator\Constraints as AppAssert;
+use App\Validator as AppAssert;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -35,6 +35,7 @@ class Task
      * @ORM\Column(type="datetime", nullable=false)
      */
     #[Assert\NotNull]
+    #[Assert\Expression("value > this.getStart()", message: "Task end date is before start date")]
     #[AppAssert\BusinessHours(from: '08:00', to: '19:00')]
     private \DateTimeInterface $end;
 

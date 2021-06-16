@@ -7,18 +7,20 @@ use App\Slot;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
-use JetBrains\PhpStorm\ArrayShape;
 use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
 use Spatie\Period\Precision;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
-use App\Validator\Constraints as AppAssert;
+use App\Validator as AppAssert;
+use App\Validator\Schedule as ScheduleAssert;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
+#[ScheduleAssert\TasksWithinBounds]
+#[ScheduleAssert\TasksMatchContractedServiceHours]
 class Schedule
 {
     const HOLIDAY_DATES = [
@@ -100,8 +102,13 @@ class Schedule
     private \DateTimeInterface $to;
 
     /**
+     * See https://gist.github.com/pylebecq/f844d1f6860241d8b025#:~:text=What's%20the%20difference%20between%20cascade,than%20one%20object%20being%20deleted.
+     * For performance considerations, see https://www.doctrine-project.org/projects/doctrine-orm/en/2.9/reference/working-with-associations.html#transitive-persistence-cascade-operations
+     * in particular: "Cascade operations require collections and related entities to be fetched into memory"
+     *
      * @ORM\OneToMany(targetEntity=Task::class, mappedBy="schedule", orphanRemoval=true)
-     * @var Collection<Task>
+     * @ORM\OrderBy({"start" = "ASC"})
+     * @var Collection<int, Task>
      */
     private Collection $tasks;
 

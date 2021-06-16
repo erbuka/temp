@@ -1,7 +1,7 @@
 <?php
 
 
-namespace App\Validator\Constraints;
+namespace App\Validator;
 
 
 use Symfony\Component\Validator\Constraint;
@@ -28,8 +28,6 @@ class BusinessHoursValidator extends ConstraintValidator
         if ($value < $dt) {
             $this->context->buildViolation($constraint->message)
                 ->setParameter('{{ date }}', $value->format(DATE_RFC3339))
-                ->setParameter('{{ start }}', $constraint->from->format('H:i'))
-                ->setParameter('{{ end }}', $constraint->to->format('H:i'))
                 ->addViolation();
         }
 
@@ -37,8 +35,6 @@ class BusinessHoursValidator extends ConstraintValidator
         if ($value > $dt) {
             $this->context->buildViolation($constraint->message)
                 ->setParameter('{{ date }}', $value->format(DATE_RFC3339))
-                ->setParameter('{{ start }}', $constraint->from->format('H:i'))
-                ->setParameter('{{ end }}', $constraint->to->format('H:i'))
                 ->addViolation();
         }
     }

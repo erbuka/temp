@@ -12,7 +12,6 @@ use App\Entity\Service;
 use App\Entity\Task;
 use App\Entity\Schedule;
 use App\Slot;
-use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
 use Spatie\Period\Period;
@@ -21,7 +20,6 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[AsCommand(
@@ -177,6 +175,10 @@ class ScheduleActivities extends Command
             $schedule->merge($consultantSchedule);
 
             $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
+        }
+
+        if (count($errors = $this->validator->validate($schedule)) > 0) {
+            throw new \Exception("Cannot validate schedule ". $errors);
         }
 
         $this->output->writeln("<info>Generated schedule</info> {$schedule->getStats()}");

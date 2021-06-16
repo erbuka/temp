@@ -21,7 +21,7 @@ class Contract
     private int $id;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Recipient::class)
+     * @ORM\ManyToOne(targetEntity=Recipient::class, cascade={"persist"})
      * @ORM\JoinColumn(nullable=false)
      */
     private Recipient $recipient;

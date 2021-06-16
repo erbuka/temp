@@ -26,19 +26,19 @@ class ContractedService
     private int $id;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Contract::class, inversedBy="services")
+     * @ORM\ManyToOne(targetEntity=Contract::class, inversedBy="services", cascade={"persist"})
      * @ORM\JoinColumn(nullable=false)
      */
     private Contract $contract;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Service::class)
+     * @ORM\ManyToOne(targetEntity=Service::class, cascade={"persist"})
      * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
     private Service $service;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Consultant::class)
+     * @ORM\ManyToOne(targetEntity=Consultant::class, cascade={"persist"})
      * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
      */
     private Consultant $consultant;
