@@ -16,7 +16,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * )
  */
 #[UniqueEntity(['contract', 'service', 'consultant'])]
-class ContractedService
+class ContractedService implements \Stringable
 {
     /**
      * @ORM\Id
@@ -97,5 +97,20 @@ class ContractedService
     public function getHours(): int
     {
         return $this->getService()->getHours();
+    }
+
+    public function getHoursOnPremises(): int
+    {
+        return $this->getService()->getHoursOnPremises();
+    }
+
+    public function getHoursRemote(): int
+    {
+        return $this->getService()->getHoursRemote();
+    }
+
+    public function __toString(): string
+    {
+        return "({$this->getConsultant()}, {$this->getRecipient()}, {$this->getService()})";
     }
 }

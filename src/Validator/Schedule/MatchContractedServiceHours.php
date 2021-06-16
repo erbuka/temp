@@ -7,9 +7,9 @@ namespace App\Validator\Schedule;
 use Symfony\Component\Validator\Constraint;
 
 #[\Attribute(\Attribute::TARGET_CLASS)]
-class TasksMatchContractedServiceHours  extends Constraint
+class MatchContractedServiceHours  extends Constraint
 {
-    public $message = 'Task {{ period }} is outside schedule boundaries {{ schedule_period }}';
+    public $message = 'The {{ actual }} {{ type }} hours scheduled do not match contracted service {{ contracted_service }} hours of {{ expected }}';
 
     public function getTargets()
     {

@@ -31,6 +31,7 @@ class Service implements \Stringable
      * @ORM\Column(type="smallint", options={"unsigned":true})
      */
     #[Assert\Positive]
+    #[Assert\Expression("value <= this.getHours()", message: 'Hours on premises >= total hours')]
     private int $hoursOnPremises;
 
     /**

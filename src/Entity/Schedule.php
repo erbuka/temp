@@ -20,7 +20,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
 #[ScheduleAssert\TasksWithinBounds]
-#[ScheduleAssert\TasksMatchContractedServiceHours]
+#[ScheduleAssert\MatchContractedServiceHours]
 class Schedule
 {
     const HOLIDAY_DATES = [
@@ -443,7 +443,7 @@ class Schedule
     }
 
     /**
-     * @return ArrayCollection<Task>
+     * @return Collection<int, Task>
      */
     public function getTasks(): Collection
     {

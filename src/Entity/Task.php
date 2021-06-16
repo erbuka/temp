@@ -23,7 +23,8 @@ class Task
      * @ORM\Column(type="datetime", nullable=false)
      */
     #[Assert\NotNull]
-    #[AppAssert\BusinessHours(from: '08:00', to: '19:00')]
+    #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
+    #[Assert\Expression("value < this.getEnd()", message: "Task start date is after or on end date")]
     private \DateTimeInterface $start;
 
     /**
@@ -35,8 +36,8 @@ class Task
      * @ORM\Column(type="datetime", nullable=false)
      */
     #[Assert\NotNull]
-    #[Assert\Expression("value > this.getStart()", message: "Task end date is before start date")]
-    #[AppAssert\BusinessHours(from: '08:00', to: '19:00')]
+    #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
+    #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
     private \DateTimeInterface $end;
 
     /**
