@@ -10,6 +10,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * @ORM\Entity(repositoryClass=RecipientRepository::class)
  */
+#[Assert\EnableAutoMapping]
 #[UniqueEntity(['name', 'vatId', 'fiscalCode'])]
 class Recipient implements \Stringable
 {

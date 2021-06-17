@@ -10,6 +10,7 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * @ORM\Entity(repositoryClass=ConsultantRepository::class)
  */
+#[Assert\EnableAutoMapping]
 class Consultant implements \Stringable
 {
     /**

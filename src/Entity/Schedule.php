@@ -19,6 +19,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 /**
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
+#[Assert\EnableAutoMapping]
 #[ScheduleAssert\TasksWithinBounds]
 #[ScheduleAssert\MatchContractedServiceHours]
 class Schedule
@@ -88,16 +89,16 @@ class Schedule
     private Uuid $uuid;
 
     /**
-     * @ORM\Column(name="`from`", type="datetime", nullable=false)
+     * @ORM\Column(name="`from`", type="datetime")
      */
-    #[Assert\NotNull]
+//    #[Assert\NotNull]
     #[AppAssert\DateTimeUTC]
     private \DateTimeInterface $from;
 
     /**
-     * @ORM\Column(name="`to`", type="datetime", nullable=false)
+     * @ORM\Column(name="`to`", type="datetime")
      */
-    #[Assert\NotNull]
+//    #[Assert\NotNull]
     #[AppAssert\DateTimeUTC]
     private \DateTimeInterface $to;
 

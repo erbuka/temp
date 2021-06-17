@@ -110,7 +110,7 @@ class ImportContracts extends Command
             $this->importSheetData($spreadsheetId, $sheetId);
         }
 
-        foreach ($this->rawConnection->executeQuery("SELECT recipient, recipient_taxid, service, hours, amount_eur, consultant FROM ".static::RAW_TABLE)->iterateAssociative() as [
+        foreach ($this->rawConnection->executeQuery("SELECT recipient, recipient_taxid, service, consultant FROM ".static::RAW_TABLE)->iterateAssociative() as [
             'service' => $serviceName,
             'consultant' => $consultantName,
             'recipient' => $recipientName,

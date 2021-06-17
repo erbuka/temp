@@ -12,6 +12,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
  * @ORM\Entity(repositoryClass=ServiceRepository::class)
  */
 #[UniqueEntity('name')]
+#[Assert\EnableAutoMapping]
 class Service implements \Stringable
 {
     /**

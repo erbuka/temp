@@ -10,7 +10,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 /**
  * @ORM\Entity(repositoryClass=TaskRepository::class)
  */
-class Task
+#[Assert\EnableAutoMapping]
+class Task implements \Stringable
 {
     /**
      * @ORM\Id
@@ -20,11 +21,12 @@ class Task
     private int $id;
 
     /**
-     * @ORM\Column(type="datetime", nullable=false)
+     * @ORM\Column(type="datetime")
      */
-    #[Assert\NotNull]
+//    #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value < this.getEnd()", message: "Task start date is after or on end date")]
+    #[Assert\Expression("value.format('Ymd') === this.getEnd().format('Ymd')", message: "Task spans across multiple days")]
     private \DateTimeInterface $start;
 
     /**
@@ -33,9 +35,9 @@ class Task
      * it has to be interpreted as "just before the other task starts"
      * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
      *
-     * @ORM\Column(type="datetime", nullable=false)
+     * @ORM\Column(type="datetime")
      */
-    #[Assert\NotNull]
+//    #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
     private \DateTimeInterface $end;
@@ -43,7 +45,7 @@ class Task
     /**
      * @ORM\Column(type="boolean")
      */
-    #[Assert\NotNull]
+//    #[Assert\NotNull]
     private bool $onPremises;
 
     /**
@@ -182,5 +184,10 @@ class Task
         $this->schedule = $schedule;
 
         return $this;
+    }
+
+    public function __toString(): string
+    {
+        return sprintf("[(%s) %s %s]", $this->id ?? '', $this->getStart()->format(DATE_RFC3339), $this->getEnd()->format(DATE_RFC3339));
     }
 }
