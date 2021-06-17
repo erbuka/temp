@@ -23,10 +23,9 @@ class Task implements \Stringable
     /**
      * @ORM\Column(type="datetime")
      */
-//    #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value < this.getEnd()", message: "Task start date is after or on end date")]
-    #[Assert\Expression("value.format('Ymd') === this.getEnd().format('Ymd')", message: "Task spans across multiple days")]
+    #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
     private \DateTimeInterface $start;
 
     /**
@@ -37,49 +36,48 @@ class Task implements \Stringable
      *
      * @ORM\Column(type="datetime")
      */
-//    #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
+    #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
+    #[Assert\Expression("value.format('Ymd') === this.getStart().format('Ymd')", message: "Task spans across multiple days")]
     private \DateTimeInterface $end;
 
     /**
      * @ORM\Column(type="boolean")
      */
-//    #[Assert\NotNull]
     private bool $onPremises;
-
-    /**
-     * @ORM\ManyToOne(targetEntity=ContractedService::class)
-     * @ORM\JoinColumn(nullable=false)
-     */
-    private ContractedService $contractedService;
 
     /**
      * Meant to be used when directly querying the database via SQL.
      * @ORM\Column(type="string", length=150)
      */
-    #[Assert\NotBlank]
     private string $consultantName;
 
     /**
      * Meant to be used when directly querying the database via SQL.
      * @ORM\Column(type="string", length=150)
      */
-    #[Assert\NotBlank]
     private string $recipientName;
 
     /**
      * Meant to be used when directly querying the database via SQL.
      * @ORM\Column(type="string", length=255)
      */
-    #[Assert\NotBlank]
     private string $serviceName;
 
     /**
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
      * @ORM\JoinColumn(nullable=false)
      */
+    #[Assert\DisableAutoMapping]
     private Schedule $schedule;
+
+    /**
+     * @ORM\ManyToOne(targetEntity=ContractedService::class)
+     * @ORM\JoinColumn(nullable=false)
+     */
+    #[Assert\DisableAutoMapping]
+    private ContractedService $contractedService;
 
     public function getId(): ?int
     {
@@ -94,10 +92,9 @@ class Task implements \Stringable
     public function setContractedService(ContractedService $cs): self
     {
         $this->contractedService = $cs;
-        $this
-            ->setConsultant($cs->getConsultant())
-            ->setRecipient($cs->getRecipient())
-            ->setService($cs->getService());
+        $this->consultantName = $cs->getConsultant()->getName();
+        $this->recipientName = $cs->getRecipientName();
+        $this->serviceName = $cs->getService()->getName();
 
         return $this;
     }
@@ -107,35 +104,14 @@ class Task implements \Stringable
         return $this->contractedService->getRecipient();
     }
 
-    private function setRecipient(Recipient $recipient): self
-    {
-        $this->recipientName = $recipient->getName();
-
-        return $this;
-    }
-
     public function getConsultant(): Consultant
     {
         return $this->contractedService->getConsultant();
     }
 
-    private function setConsultant(Consultant $consultant): self
-    {
-        $this->consultantName = $consultant->getName();
-
-        return $this;
-    }
-
     public function getService(): Service
     {
         return $this->contractedService->getService();
-    }
-
-    private function setService(Service $service): self
-    {
-        $this->serviceName = $service->getName();
-
-        return $this;
     }
 
     public function getStart(): \DateTimeInterface

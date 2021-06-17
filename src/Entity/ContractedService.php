@@ -15,6 +15,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  *     }
  * )
  */
+#[Assert\EnableAutoMapping]
 #[UniqueEntity(['contract', 'service', 'consultant'])]
 class ContractedService implements \Stringable
 {
