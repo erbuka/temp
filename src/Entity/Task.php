@@ -4,7 +4,7 @@ namespace App\Entity;
 
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
-use App\Validator as AppAssert;
+use App\Validator\Constraints as AppAssert;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -23,8 +23,8 @@ class Task implements \Stringable
     /**
      * @ORM\Column(type="datetime")
      */
+    #[AppAssert\NotItalianHoliday]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
-    #[Assert\Expression("value < this.getEnd()", message: "Task start date is after or on end date")]
     #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
     private \DateTimeInterface $start;
 
@@ -38,7 +38,6 @@ class Task implements \Stringable
      */
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
-    #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
     #[Assert\Expression("value.format('Ymd') === this.getStart().format('Ymd')", message: "Task spans across multiple days")]
     private \DateTimeInterface $end;
 

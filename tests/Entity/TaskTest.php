@@ -19,11 +19,9 @@ class TaskTest extends KernelTestCase
 
         $v = $validator->validate($t);
 
-        $this->assertCount(2, $v);
+        $this->assertCount(1, $v);
         $this->assertSame($t->getStart(), $v->get(0)->getInvalidValue());
         $this->assertEquals("Task is on a weekend day", $v->get(0)->getMessage());
-        $this->assertSame($t->getEnd(), $v->get(1)->getInvalidValue());
-        $this->assertEquals("Task is on a weekend day", $v->get(1)->getMessage());
     }
 
     public function testSpansMultipleDaysInvalid() {
@@ -51,10 +49,8 @@ class TaskTest extends KernelTestCase
 
         $v = $validator->validate($t);
 
-        $this->assertCount(2, $v);
-        $this->assertSame($t->getStart(), $v->get(0)->getInvalidValue());
-        $this->assertEquals("Task start date is after or on end date", $v->get(0)->getMessage());
-        $this->assertSame($t->getEnd(), $v->get(1)->getInvalidValue());
-        $this->assertEquals("Task end date is before or on start date", $v->get(1)->getMessage());
+        $this->assertCount(1, $v);
+        $this->assertSame($t->getEnd(), $v->get(0)->getInvalidValue());
+        $this->assertEquals("Task end date is before or on start date", $v->get(0)->getMessage());
     }
 }
