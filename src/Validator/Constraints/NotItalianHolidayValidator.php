@@ -102,9 +102,10 @@ class NotItalianHolidayValidator extends ConstraintValidator
         return $holidays[$year];
     }
 
-    private static function isItalianHoliday(\DateTimeInterface $date, bool $includePrefestivi): bool
+    public static function isItalianHoliday(\DateTimeInterface $date, bool $includePrefestivi): bool
     {
         $holidays = static::getItalianHolidays($includePrefestivi, (int)$date->format('Y'));
+
         return in_array($date->format(static::DATE_FORMAT), $holidays);
     }
 }

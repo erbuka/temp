@@ -23,7 +23,7 @@ use Spatie\Period\Precision;
  *
  * @package App
  */
-class Slot
+class Slot implements \Stringable
 {
     private Period $period;
     private \SplObjectStorage $tasks;
@@ -95,12 +95,29 @@ class Slot
     {
         foreach ($this->tasks as $task) {
             /** @var Task $task */
-            if ($task->getConsultant() === $cs->getConsultant() && $task->getService() === $cs->getService() && $task->getRecipient() === $cs->getRecipient())
+            if ($task->getContractedService() === $cs)
                 return true;
         }
 
         return false;
     }
+
+    public function isAllocatedOnPremisesToContractedService(ContractedService $cs): bool
+    {
+        foreach ($this->tasks as $task) {
+            /** @var Task $task */
+            if ($task->getContractedService() === $cs && $task->getOnPremises())
+                return true;
+        }
+
+        return false;
+    }
+
+    public function empty(): void
+    {
+        $this->tasks->removeAll($this->tasks);
+    }
+
 
     /**
      * Returns the *excluded* end of the period.
@@ -116,5 +133,10 @@ class Slot
     public function getIndex(): int
     {
         return $this->index;
+    }
+
+    public function __toString()
+    {
+        return "{$this->getIndex()}:{$this->getPeriod()->asString()}";
     }
 }

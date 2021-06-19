@@ -93,11 +93,21 @@ class TaskController extends AbstractController
         $data = [];
         foreach ($tasks as $task) {
             /** @var Task $task */
+            $isOnPremises = $task->getOnPremises();
+
             $data[] = [
                 'id' => $task->getId(),
                 'start' => $task->getStart()->format(DATE_ATOM),
                 'end' => $task->getEnd()->format(DATE_ATOM),
-                'title' => "{$task->getService()} - {$task->getRecipient()->getHeadquarters()} - {$task->getRecipient()}",
+//                'title' => "{$task->getService()} @ {$task->getRecipient()->getHeadquarters()} - {$task->getRecipient()}",
+                'title' => match ($isOnPremises) {
+                    true => "{$task->getService()} | {$task->getRecipient()}",
+                    false => "{$task->getService()} | {$task->getRecipient()}",
+                },
+                'backgroundColor' => match ($isOnPremises) {
+                    true => 'green',
+                    false => 'cornflowerblue'
+                },
                 'extendedProps' => [
                     'on_premises' => $task->getOnPremises(),
                     'consultant' => $task->getConsultant()->getName(),

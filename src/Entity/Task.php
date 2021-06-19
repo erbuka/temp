@@ -5,12 +5,12 @@ namespace App\Entity;
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use App\Validator\Constraints as AppAssert;
+use Spatie\Period\Period;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * @ORM\Entity(repositoryClass=TaskRepository::class)
  */
-#[Assert\EnableAutoMapping]
 class Task implements \Stringable
 {
     /**
@@ -23,6 +23,7 @@ class Task implements \Stringable
     /**
      * @ORM\Column(type="datetime")
      */
+    #[Assert\NotNull]
     #[AppAssert\NotItalianHoliday]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
@@ -36,6 +37,7 @@ class Task implements \Stringable
      *
      * @ORM\Column(type="datetime")
      */
+    #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
     #[Assert\Expression("value.format('Ymd') === this.getStart().format('Ymd')", message: "Task spans across multiple days")]
@@ -44,6 +46,7 @@ class Task implements \Stringable
     /**
      * @ORM\Column(type="boolean")
      */
+    #[Assert\NotNull]
     private bool $onPremises;
 
     /**
@@ -68,14 +71,12 @@ class Task implements \Stringable
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
      * @ORM\JoinColumn(nullable=false)
      */
-    #[Assert\DisableAutoMapping]
     private Schedule $schedule;
 
     /**
      * @ORM\ManyToOne(targetEntity=ContractedService::class)
      * @ORM\JoinColumn(nullable=false)
      */
-    #[Assert\DisableAutoMapping]
     private ContractedService $contractedService;
 
     public function getId(): ?int
@@ -163,6 +164,11 @@ class Task implements \Stringable
 
     public function __toString(): string
     {
-        return sprintf("[(%s) %s %s]", $this->id ?? '', $this->getStart()->format(DATE_RFC3339), $this->getEnd()->format(DATE_RFC3339));
+        return sprintf("[(%s) %s %s %s]",
+            $this->id ?? '',
+            $this->getStart()->format(DATE_RFC3339),
+            $this->getEnd()->format(DATE_RFC3339),
+            $this->getOnPremises() ? 'on premises' : '',
+        );
     }
 }
