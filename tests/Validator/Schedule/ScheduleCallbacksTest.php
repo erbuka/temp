@@ -16,20 +16,12 @@ use Symfony\Component\Validator\Test\ConstraintValidatorTestCase;
 
 class ScheduleCallbacksTest extends ConstraintValidatorTestCase
 {
-    public function testContractedServiceExcessHoursPerDay() {
-        $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
-        $cs = (new ContractedService())
-            ->setContract((new Contract)
-                ->setRecipient((new Recipient())->setName('Recipient #2'))
-            )
-            ->setConsultant((new Consultant())
-                ->setName('Cugusi Mario')
-            )
-            ->setService((new Service())
-                ->setName('3. Zootecnica')
-                ->setHours(10)
-                ->setHoursOnPremises(4)
-            );
+    /**
+     * @dataProvider scheduleAndContractedServiceProvider
+     */
+    public function testContractedServiceExcessHoursPerDay(Schedule $schedule, ContractedService $cs) {
+        $from = $schedule->getFrom();
+        
         $schedule->addTask((new Task())
             ->setContractedService($cs)
             ->setStart($from->setTime(9, 0))
@@ -57,20 +49,11 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->assertRaised();
     }
 
-    public function testOverlappingTasksViolation() {
-        $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
-        $cs = (new ContractedService())
-            ->setContract((new Contract)
-                ->setRecipient((new Recipient())->setName('Recipient #2'))
-            )
-            ->setConsultant((new Consultant())
-                ->setName('Cugusi Mario')
-            )
-            ->setService((new Service())
-                ->setName('3. Zootecnica')
-                ->setHours(10)
-                ->setHoursOnPremises(4)
-            );
+    /**
+     * @dataProvider scheduleAndContractedServiceProvider
+     */
+    public function testOverlappingTasksViolation(Schedule $schedule, ContractedService $cs) {
+        $from = $schedule->getFrom();
 
         // Main task to be overlapped
         $schedule->addTask($tMain = (new Task())
@@ -137,16 +120,6 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->setParameter('{{ task }}', (string) $t5)
 
             ->assertRaised();
-    }
-
-    public function testAdjacentNonOverlappingTasks() {
-//        $this->markTestIncomplete();
-        // !!! this should not overlap
-//        $schedule->addTask((new Task())
-//            ->setContractedService($cs)
-//            ->setStart($from->setTime(14, 0))
-//            ->setEnd($from->setTime(18, 0))
-//            ->setOnPremises(false));
     }
 
     /**
