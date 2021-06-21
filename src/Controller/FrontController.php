@@ -3,8 +3,14 @@
 
 namespace App\Controller;
 
+use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\Recipient;
+use App\Entity\Schedule;
+use App\Entity\Task;
+use App\ScheduleManager;
+use App\ScheduleManagerFactory;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\HttpFoundation\Request;
@@ -71,6 +77,50 @@ class FrontController extends AbstractController
 
         return $this->render('contracts-list.html.twig', [
             'recipients' => $recipients
+        ]);
+    }
+
+    #[Route('/schedules/{uuid}')]
+    public function generateSchedule(string $uuid, ScheduleManagerFactory $scheduleManagerFactory): Response
+    {
+        $schedule = $this->getDoctrine()->getRepository(Schedule::class)->findOneBy(['uuid' => $uuid]);
+        if (!$schedule)
+            $this->createNotFoundException("No schedule found with uuid={$uuid}");
+
+        $manager = $scheduleManagerFactory->createScheduleManager($schedule);
+        $tasksByConsultant = $manager->getTasksByConsultant();
+
+        // TODO ensure sorting by consultant name
+        $consultantsSortedByName = iterator_to_array($tasksByConsultant);
+        usort($consultantsSortedByName, fn($c1, $c2) => $c1->getName() <=> $c2->getName());
+
+        $consultants = [];
+        foreach ($consultantsSortedByName as $consultant) {
+            /** @var Consultant $consultant */
+
+            $tasks = [];
+            foreach ($tasksByConsultant[$consultant] as $task) {
+                /** @var Task $task */
+                $tasks[] = [
+                    'date' => $task->getStart()->format('Y-m-d'),
+                    'start' => $task->getStart()->format('H:i'),
+                    'end' => $task->getEnd()->format('H:i'),
+                    'recipient' => $task->getRecipient()->getName(),
+                    'location' => $task->getRecipient()->getHeadquarters(),
+                ];
+            }
+
+            $consultants[] = [
+                'name' => $consultant->getName(),
+                'job' => $consultant->getJobTitle(),
+                'tasks' => $tasks
+            ];
+        }
+
+        return $this->render('schedule.twig', [
+            'base' => static::APP_DIRECTORY,
+            'schedule' => $schedule,
+            'consultants' => $consultants
         ]);
     }
 

@@ -15,6 +15,7 @@ class ScheduleManagerFactory
     public function __construct(EntityManagerInterface $entityManager)
     {
         $this->entityManager = $entityManager;
+        $this->cache = new \SplObjectStorage();
     }
 
     public function createScheduleManager(Schedule $schedule): ScheduleManager

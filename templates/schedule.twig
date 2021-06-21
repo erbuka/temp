@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="it-IT">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Programmazione consulenze in sede {{ schedule.uuid }}</title>
+
+        <link rel="stylesheet" href="{{ asset(base ~ '/assets/styles/schedule.css') }}">
+
+        <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>
+    </head>
+    <body>
+        <header id="header">
+            PROGRAMMAZIONE CONAGRIVET ORE IN SEDE dal {{ schedule.from.format('Y-m-d') }} al {{ schedule.to.format('Y-m-d') }}
+        </header>
+
+        <main id="content">
+
+            {% for consultant in consultants %}
+            <article class="consultant">
+                <header>
+                    <h1>{{ consultant.name }} <span class="job">{{ consultant.job }}</span></h1>
+                </header>
+
+                <div class="tasks">
+                    <div class="headings">
+                        <span>data</span>
+                        <span>orario</span>
+                        <span>destinataio</span>
+                        <span>luogo</span>
+                    </div>
+
+                    {% for task in consultant.tasks|slice(0, 80) %}
+                    <div class="task">
+                        <span>{{ task.date }}</span>
+                        <span>{{ task.start }} - {{ task.end }}</span>
+                        <span>{{ task.recipient }}</span>
+                        <span>{{ task.location }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </article>
+            {% endfor %}
+
+        </main>
+    </body>
+</html>

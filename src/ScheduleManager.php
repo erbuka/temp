@@ -22,8 +22,9 @@ class ScheduleManager
     private Schedule $schedule;
     private \SplFixedArray $slots;
     /** @var array<string, Slot> e.g. '2021020318' => Slot */
-    private array $dayHourSlotMap;
+    private array $slotsByDayHours;
     private Period $period;
+    private \SplObjectStorage $tasksByConsultant;
 
     public function __construct(Schedule $schedule, EntityManagerInterface $entityManager)
     {
@@ -81,9 +82,19 @@ class ScheduleManager
         }
 
         $this->slots = \SplFixedArray::fromArray($eligibleDays);
-        $this->dayHourSlotMap = $slotsMap;
+        $this->slotsByDayHours = $slotsMap;
     }
 
+    /**
+     * N.B. must not remove tasks!
+     */
+    private function clearSlots(): void
+    {
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            $slot->empty();
+        }
+    }
 
     /**
      * This is called by the factory to ensure the manager is in sync with the actual schedule tasks.
@@ -97,17 +108,26 @@ class ScheduleManager
     public function reloadTasks()
     {
         // Empty all slots
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            $slot->empty();
-        }
+        $this->clearSlots();
+        $this->tasksByConsultant = new \SplObjectStorage();
 
         // Load tasks
         $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createTasksSortedByStartCriteria());
         foreach ($tasks as $task) {
             /** @var Task $task */
             $this->loadTaskIntoSlot($task);
+
+            $consultant = $task->getConsultant();
+            if (!isset($this->tasksByConsultant[$consultant]))
+                $this->tasksByConsultant[$consultant] = [$task];
+            else
+                $this->tasksByConsultant[$consultant] = [...$this->tasksByConsultant[$consultant], $task];
         }
+    }
+
+    public function getTasksByConsultant(): \SplObjectStorage
+    {
+        return clone $this->tasksByConsultant;
     }
 
     protected function loadTaskIntoSlot(Task $task)
@@ -118,12 +138,12 @@ class ScheduleManager
         foreach ($period as $hour) {
             $key = $hour->format(static::DATE_SLOTHASH);
 
-            if (!isset($this->dayHourSlotMap[$key]))
+            if (!isset($this->slotsByDayHours[$key]))
                 throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
 
-            assert($this->dayHourSlotMap[$key] instanceof Slot, "Map does not return a slot");
+            assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
 
-            $this->dayHourSlotMap[$key]->addTask($task);
+            $this->slotsByDayHours[$key]->addTask($task);
         }
     }
 
@@ -131,4 +151,9 @@ class ScheduleManager
 
 
     //endregion Validation callbacks
+
+    public function getStats(): string
+    {
+        throw new \RuntimeException("not implmented");
+    }
 }
