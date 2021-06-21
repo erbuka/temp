@@ -20,7 +20,7 @@ class ScheduleRepository extends ServiceEntityRepository
         parent::__construct($registry, Schedule::class);
     }
 
-    public static function createSortedTasksCriteria(): Criteria
+    public static function createTasksSortedByStartCriteria(): Criteria
     {
         return Criteria::create()
             ->orderBy(['start' => Criteria::ASC]);

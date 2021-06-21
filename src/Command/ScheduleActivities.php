@@ -8,6 +8,7 @@ use App\ConsultantScheduleGenerator;
 use App\Entity\Consultant;
 use App\Entity\Service;
 use App\Entity\Schedule;
+use App\Entity\Task;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -27,7 +28,7 @@ class ScheduleActivities extends Command
 
     protected \DateTimeInterface $from;
     protected \DateTimeInterface $to;
-    protected \DateTimeZone $timezone;
+//    protected \DateTimeZone $timezone;
     protected EntityManagerInterface $entityManager;
     protected Connection $connection;
     protected ValidatorInterface $validator;
@@ -64,10 +65,23 @@ class ScheduleActivities extends Command
             $consultantSchedule = $this->scheduleGenerator->generateSchedule($consultant, $this->from, $this->to);
 
 //            $this->entityManager->persist($consultantSchedule);
+//            $this->entityManager->flush();
             $schedule->merge($consultantSchedule);
 
             $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
         }
+
+        foreach ($schedule->getTasks() as $task) {
+            /** @var Task $task */
+            if ($task->getSchedule() !== $schedule)
+                throw new \LogicException('Task does not belong to schedule');
+
+//            $this->entityManager->persist($task);
+        }
+
+//        $schedule->consolidateNonOverlappingTasksDaily();
+
+
 
         if (count($errors = $this->validator->validate($schedule)) > 0)
             throw new \Exception("Cannot validate schedule ". $errors);

@@ -97,14 +97,13 @@ class ScheduleManager
     public function reloadTasks()
     {
         // Empty all slots
-
         foreach ($this->slots as $slot) {
             /** @var Slot $slot */
             $slot->empty();
         }
 
         // Load tasks
-        $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createSortedTasksCriteria());
+        $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createTasksSortedByStartCriteria());
         foreach ($tasks as $task) {
             /** @var Task $task */
             $this->loadTaskIntoSlot($task);

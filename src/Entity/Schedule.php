@@ -7,7 +7,6 @@ use App\ScheduleManager;
 use App\Slot;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
-use Doctrine\Common\Collections\Criteria;
 use Doctrine\ORM\Mapping as ORM;
 use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
@@ -101,7 +100,7 @@ class Schedule
         $eligibleDays = [];
         $slotsMap = [];
 
-        foreach ($this->period as $day) {
+        foreach ($this->getPeriod() as $day) {
             /** @var \DateTimeImmutable $day */
 
             if (AppAssert\NotItalianHolidayValidator::isItalianHoliday($day, includePrefestivi: true)) {
@@ -138,7 +137,7 @@ class Schedule
 
     private function getSlots(): \SplFixedArray
     {
-        if (!$this->slots)
+        if (!isset($this->slots))
             $this->generateSlots();
 
         return $this->slots;
@@ -241,7 +240,7 @@ class Schedule
 
         return sprintf("id=%s period=%s, slots=%d, allocated_slots=%d tasks=%d",
     $this->id ?? $this->getUuid()->toRfc4122(),
-            $this->period->asString(),
+            $this->getPeriod()->asString(),
             $slotsCount,
             $allocatedSlots,
             count($this->tasks)
@@ -254,6 +253,8 @@ class Schedule
     public function loadTasksIntoSlots()
     {
         $tasks = $this->getTasks();
+        if (!isset($this->slots))
+            $this->generateSlots();
 
         // hash each slot by datetime Ymd-h
         foreach ($tasks as $task) {
@@ -270,7 +271,7 @@ class Schedule
         foreach ($period as $hour) {
             $key = $hour->format(static::DATE_SLOTHASH);
             if (!isset($this->dayHourSlotMap[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->getPeriod()->asString()}");
             assert($this->dayHourSlotMap[$key] instanceof Slot, "Map does not return a slot");
 
             $this->dayHourSlotMap[$key]->addTask($task);
@@ -282,22 +283,150 @@ class Schedule
      * loading tasks (from the database) into slots is the same problem.
      *
      * Sets $this as the owning schedule of each merged task.
+     *
+     * N.B. I assume each task is uniquely identified by (contracted service, on-premises)
+     * N.B. 2: assert tasks do not overlap
      */
     public function merge(Schedule ...$sources)
     {
         foreach ($sources as $schedule) {
             foreach ($schedule->getTasks() as $task) {
                 /** @var Task $task */
-                $this->loadTaskIntoSlot($task);
-                $task->setSchedule($this);
                 $this->addTask($task);
+                $task->setSchedule($this);
+                $this->loadTaskIntoSlot($task);
             }
         }
     }
 
-    public function getSlot(Task $task): Slot
+    /**
+     * - $this->slots are implicitly ordered by ascending time
+     */
+    public function consolidateNonOverlappingTasksDaily(): void
     {
+        $daySlots = [];
+        $dayTasks = [];
+        // Slots ordered by ascending time
 
+        // Group tasks by day
+        foreach ($this->getSlots() as $slot) {
+            /** @var Slot $slot */
+            assert(count($slot->getTasks()) < 2, "Slot {$slot} contains overlapping tasks");
+
+            $dayHash = $slot->getStart()->format(static::DATE_NOTIME);
+            if (!isset($dayTasks[$dayHash])) {
+                $dayTasks[$dayHash] = [];
+            }
+            if (!isset($daySlots[$dayHash])) {
+                $daySlots[$dayHash] = [];
+            }
+
+            $daySlots[$dayHash][] = $slot;
+
+            foreach ($slot->getTasks() as $task) {
+                /** @var Task $task */
+                if (!in_array($task, $dayTasks[$dayHash])) {
+                    $dayTasks[$dayHash][] = $task;
+                }
+            }
+        }
+
+        foreach ($dayTasks as $dayHash => &$tasks) {
+            /** @var Task[] $tasks */
+            if (count($tasks) < 2) continue;
+
+
+            $slots = $daySlots[$dayHash];
+
+            // Ensure tasks are ordered by ascending start
+            usort($tasks, fn(/** @var Task $t1 */ $t1, /** @var Task $t2 */ $t2) => $t1->getStart() <=> $t2->getStart());
+
+            $dayTasksHoursTotal = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
+            $dayTasksHoursOnPremises = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours() * (int) $t->getOnPremises(), 0);
+            $dayAllocatedSlots = count(array_filter($slots, fn($s) => $s->isAllocated()));
+            assert($dayTasksHoursTotal === $dayAllocatedSlots);
+
+//            echo sprintf("\nDay {$dayHash} hours_total={$dayTasksHoursTotal} hours_on_premises={$dayTasksHoursOnPremises}");
+
+            $reallocatedTasks = []; // tasks removed
+
+            foreach ($tasks as $i => $task) {
+                if (in_array($task, $reallocatedTasks)) {
+                    continue;
+                }
+
+                $matches = array_filter($tasks, fn(/** @var Task $t */ $t) =>
+                    $t !== $task
+                    && $t->sameActivityOf($task)
+//                    && $t->getStart() > $task->getStart() // Prevents matching already iterated on tasks
+                );
+                if (empty($matches)) continue;
+
+                $matchesHours = array_reduce($matches, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
+                assert($matchesHours > 0, "Task hours $matchesHours > 0");
+
+                // Expands the task's end to include matched tasks hours.
+                // This does not reflect the exact start/end of the task as these are reassigned
+                // when the task is spread across daily slots (see below)
+                $task->setEnd(\DateTime::createFromInterface($task->getEnd())->add(new \DateInterval("PT{$matchesHours}H")));
+
+                array_push($reallocatedTasks, ...$matches);
+            }
+
+            if (empty($reallocatedTasks))
+                continue; // no task has been merged.
+
+            // Remove merged tasks.
+            foreach ($tasks as $i => $task)
+                if (in_array($task, $reallocatedTasks)) {
+                    unset($tasks[$i]);
+                    $this->removeTask($task); // TODO entityManager::delete() somehow
+
+//                    echo "\nRemoved task {$task}";
+                }
+
+            // Empty all slots
+            foreach ($slots as $slot) {
+                /** @var Slot $slot */
+                $slot->empty();
+            }
+
+            $dayTasksHoursTotal_after = array_reduce($tasks, fn($sum, $t) => ($sum + (int) $t->getHours()), 0);
+            assert($dayTasksHoursTotal === $dayTasksHoursTotal_after);
+
+            // Reallocate tasks
+//            $latestSlotIndex = rand(0, count($slots) - $dayTasksHoursTotal);
+            $latestSlotIndex = 0;
+            foreach ($tasks as $task) {
+                /** @var Task $task */
+                assert($latestSlotIndex < count($slots));
+
+                $hours = $task->getHours();
+
+                $assignedSlots = array_slice($slots, $latestSlotIndex, $hours);
+                $task->setEnd(end($assignedSlots)->getEnd());
+                $task->setStart(reset($assignedSlots)->getStart());
+
+                foreach ($assignedSlots as $slot) {
+                    /** @var Slot $slot */
+                    $slot->addTask($task);
+                    $latestSlotIndex++;
+                }
+            }
+
+            $dayTasksHoursTotal_after = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
+            $dayTasksHoursOnPremises_after = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours() * (int) $t->getOnPremises(), 0);
+            $dayAllocatedSlots_after = count(array_filter($slots, fn($s) => $s->isAllocated()));
+            if ($dayTasksHoursTotal !== $dayTasksHoursTotal_after) {
+                assert($dayTasksHoursTotal === $dayTasksHoursTotal_after);
+            }
+            if ($dayTasksHoursOnPremises ==! $dayTasksHoursOnPremises_after) {
+                assert($dayTasksHoursOnPremises === $dayTasksHoursOnPremises_after);
+            }
+            if ($dayAllocatedSlots !== $dayAllocatedSlots_after) {
+                assert($dayAllocatedSlots === $dayAllocatedSlots_after);
+            }
+        }
     }
 
     /**
@@ -396,6 +525,8 @@ class Schedule
 
     /**
      * A contracted service cannot be assigned more than 5 hours (=slots) per day.
+     *
+     * @deprecated
      */
 //    #[Assert\Callback]
     public function validateContractedServicesDailyHours(ExecutionContextInterface $context)
@@ -629,5 +760,18 @@ class Schedule
         return $this->to;
     }
 
+    public function getPeriod(): Period
+    {
+        if (!isset($this->period))
+            $this->period = Period::make($this->getFrom(), $this->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END());
+
+        return $this->period;
+    }
+
     //endregion Persisted fields accessors
+
+    public function __toString(): string
+    {
+        return $this->getStats();
+    }
 }

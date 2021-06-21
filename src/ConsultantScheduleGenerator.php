@@ -74,10 +74,15 @@ class ConsultantScheduleGenerator
         assert($dog > 0, "Watchdog triggered!");
 
         $schedule->assertZeroOrOneTaskPerSlot();
+        $schedule->consolidateNonOverlappingTasksDaily();
 
         // Validate consultant Schedule
         if (count($errors = $this->validator->validate($schedule, null, ['Default', 'consultant'])) > 0)
             throw new \Exception("Invalid schedule for consultant {$consultant}:". $errors);
+
+//        $this->entityManager->persist($schedule);
+//        $this->entityManager->flush();
+//        exit(0);
 
         return $schedule;
     }
@@ -196,8 +201,6 @@ class ConsultantScheduleGenerator
 
             if (count($errors = $this->validator->validate($task)) > 0)
                 throw new \Exception("Cannot validate task ({$task->getConsultant()->getName()}, {$task->getRecipient()->getName()}, {$task->getService()->getName()}): ". $errors);
-
-            $this->entityManager->persist($task);
 
             foreach ($slots as $slot) {
                 /** @var Slot $slot */

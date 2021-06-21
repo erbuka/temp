@@ -71,7 +71,7 @@ class Task implements \Stringable
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
      * @ORM\JoinColumn(nullable=false)
      */
-    private Schedule $schedule;
+    private ?Schedule $schedule;
 
     /**
      * @ORM\ManyToOne(targetEntity=ContractedService::class)
@@ -150,16 +150,21 @@ class Task implements \Stringable
         return $this;
     }
 
-    public function getSchedule(): Schedule
+    public function getSchedule(): ?Schedule
     {
         return $this->schedule;
     }
 
-    public function setSchedule(Schedule $schedule): self
+    public function setSchedule(?Schedule $schedule): self
     {
         $this->schedule = $schedule;
 
         return $this;
+    }
+
+    public function sameActivityOf(Task $task): bool
+    {
+        return $this->contractedService === $task->contractedService && $this->onPremises === $task->onPremises;
     }
 
     public function __toString(): string
@@ -170,5 +175,13 @@ class Task implements \Stringable
             $this->getEnd()->format(DATE_RFC3339),
             $this->getOnPremises() ? 'on premises' : '',
         );
+    }
+
+    public function getHours(): int
+    {
+        $interval = \DateTime::createFromInterface($this->getStart())->diff($this->getEnd());
+        assert($interval->s === 0 && $interval->i === 0, "Task duration is not a multiple of 1 hour");
+
+        return $interval->h;
     }
 }
