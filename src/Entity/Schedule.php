@@ -226,25 +226,16 @@ class Schedule
         assert(false, 'This should not happen');
     }
 
+    /**
+     * @deprecated
+     * @return string
+     */
     public function getStats(): string
     {
-        $slots = $this->getSlots();
-        $allocatedSlots = 0;
-        $slotsCount = $slots->getSize(); // ::count() and count() are equivalent to ::getSize()
+        if (!$this->manager)
+            return "A manager needs to be instantiated for this schedule to have stats availble";
 
-        foreach ($slots as $slot) {
-            /** @var Slot $slot */
-            if ($slot->isAllocated())
-                $allocatedSlots++;
-        }
-
-        return sprintf("id=%s period=%s, slots=%d, allocated_slots=%d tasks=%d",
-    $this->id ?? $this->getUuid()->toRfc4122(),
-            $this->getPeriod()->asString(),
-            $slotsCount,
-            $allocatedSlots,
-            count($this->tasks)
-        );
+        return $this->manager->getStats();
     }
 
     /**
@@ -509,11 +500,6 @@ class Schedule
         return $count;
     }
 
-    public function getConsultantSchedule(Consultant $consultant): Schedule
-    {
-        throw new \RuntimeException('Not implemented');
-    }
-
     public function setManager(?ScheduleManager $manager): self
     {
         $this->manager = $manager;
@@ -772,6 +758,6 @@ class Schedule
 
     public function __toString(): string
     {
-        return $this->getStats();
+        return $this->getId() ?? $this->getUuid();
     }
 }
