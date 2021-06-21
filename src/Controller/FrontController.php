@@ -113,12 +113,15 @@ class FrontController extends AbstractController
             $consultants[] = [
                 'name' => $consultant->getName(),
                 'job' => $consultant->getJobTitle(),
-                'tasks' => $tasks
+                'tasks' => $tasks,
+                'hours' => $manager->getConsultantHours($consultant),
+                'hours_on_premises' => $manager->getConsultantHoursOnPremises($consultant),
             ];
         }
 
         return $this->render('schedule.twig', [
             'base' => static::APP_DIRECTORY,
+            'schedule_manager' => $manager,
             'schedule' => $schedule,
             'consultants' => $consultants
         ]);

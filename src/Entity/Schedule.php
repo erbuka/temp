@@ -76,7 +76,7 @@ class Schedule
     /** @var array<string, Slot> e.g. '2021020318' => Slot */
     private array $dayHourSlotMap;
     private Period $period;
-    private ScheduleManager $manager;
+    private ?ScheduleManager $manager;
 
     /**
      * Invoked only when creating new entities inside the app.
@@ -514,7 +514,7 @@ class Schedule
         throw new \RuntimeException('Not implemented');
     }
 
-    public function setManager(ScheduleManager $manager): self
+    public function setManager(?ScheduleManager $manager): self
     {
         $this->manager = $manager;
 

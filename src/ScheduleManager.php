@@ -4,6 +4,7 @@
 namespace App;
 
 
+use App\Entity\Consultant;
 use App\Entity\Schedule;
 use App\Entity\Task;
 use App\Repository\ScheduleRepository;
@@ -25,6 +26,8 @@ class ScheduleManager
     private array $slotsByDayHours;
     private Period $period;
     private \SplObjectStorage $tasksByConsultant;
+    private \SplObjectStorage $consultantHours;
+    private \SplObjectStorage $consultantHoursOnPremises;
 
     public function __construct(Schedule $schedule, EntityManagerInterface $entityManager)
     {
@@ -103,13 +106,19 @@ class ScheduleManager
      * In general, this method is used by the factory to partially reset the manager under the assumption
      * that variants (tasks, ...) have changed between ::createScheduleManager() invocations.
      *
-     * N.B. Managers are cached to avoid recreating the slots which are based on the Schedule invariant 'from' and 'to' properties.
+     * N.B. Managers are cached to avoid recreating the slots which are based on the Schedule *invariant* 'from' and 'to' properties.
      */
     public function reloadTasks()
     {
         // Empty all slots
-        $this->clearSlots();
+        if (!isset($this->slots))
+            $this->generateSlots();
+        else
+            $this->clearSlots();
+
         $this->tasksByConsultant = new \SplObjectStorage();
+        $this->consultantHours = new \SplObjectStorage();
+        $this->consultantHoursOnPremises = new \SplObjectStorage();
 
         // Load tasks
         $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createTasksSortedByStartCriteria());
@@ -122,6 +131,18 @@ class ScheduleManager
                 $this->tasksByConsultant[$consultant] = [$task];
             else
                 $this->tasksByConsultant[$consultant] = [...$this->tasksByConsultant[$consultant], $task];
+
+            if (!isset($this->consultantHours[$consultant])) {
+                $this->consultantHours[$consultant] = $task->getHours();
+            } else
+                $this->consultantHours[$consultant] += $task->getHours();
+
+            if ($task->getOnPremises()) {
+                if (!isset($this->consultantHoursOnPremises[$consultant])) {
+                    $this->consultantHoursOnPremises[$consultant] = $task->getHours();
+                } else
+                    $this->consultantHoursOnPremises[$consultant] += $task->getHours();
+            }
         }
     }
 
@@ -154,6 +175,76 @@ class ScheduleManager
 
     public function getStats(): string
     {
-        throw new \RuntimeException("not implmented");
+        $allocatedSlots = 0;
+        $freeSlots = 0;
+//        $slotsCount = $this->slots->getSize(); // ::count() and count() are equivalent to ::getSize()
+        $allocatedTasks = new \SplObjectStorage(); // Task => count of slots in which the task is included
+        $taskHours = 0;
+
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocated())
+                $allocatedSlots++;
+            else
+                $freeSlots++;
+
+            foreach ($slot->getTasks() as $task) {
+                /** @var Task $task */
+                if (!$allocatedTasks->contains($allocatedTasks))
+                    $allocatedTasks->attach($task, 1);
+                else
+                    $allocatedTasks[$task] += 1;
+
+                $taskHours += $task->getHours();
+            }
+        }
+        assert($freeSlots + $allocatedSlots === count($this->slots), "free=$freeSlots + allocated=$allocatedSlots !== count={$this->slots->count()}");
+        assert(count($allocatedTasks) === $this->schedule->getTasks()->count(), "Task count doesnt match");
+
+        return sprintf("id=%s period=%s | slots=%d free=%d | tasks=%d hours=%d consultants=%d",
+            $this->id ?? $this->schedule->getUuid()->toRfc4122(),
+            $this->period->asString(),
+            count($this->slots),
+            $freeSlots,
+            count($allocatedTasks),
+            $taskHours,
+            count($this->tasksByConsultant)
+        );
+    }
+
+    public function computeConsultantHours(): int
+    {
+        $total = 0;
+        $onPremises = 0;
+        foreach ($this->tasksByConsultant as $consultant) {
+            /** @var Consultant $consultant */
+
+            foreach ($this->tasksByConsultant[$consultant] as $task) {
+                /** @var Task $task */
+                $taskHours = $task->getHours();
+
+                $total += $taskHours;
+                if ($task->getOnPremises())
+                    $onPremises += $taskHours;
+            }
+        }
+
+        return $total;
+    }
+
+    public function getConsultantHours(Consultant $consultant): int
+    {
+        if (!isset($this->consultantHours[$consultant]))
+            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
+
+        return $this->consultantHours[$consultant];
+    }
+
+    public function getConsultantHoursOnPremises(Consultant $consultant): int
+    {
+        if (!isset($this->consultantHoursOnPremises[$consultant]))
+            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
+
+        return $this->consultantHoursOnPremises[$consultant];
     }
 }

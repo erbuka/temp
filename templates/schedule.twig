@@ -11,7 +11,12 @@
     </head>
     <body>
         <header id="header">
-            PROGRAMMAZIONE CONAGRIVET ORE IN SEDE dal {{ schedule.from.format('Y-m-d') }} al {{ schedule.to.format('Y-m-d') }}
+            <h1>CONAGRIVET S.r.l.</h1>
+            <h2>Programmazione ore presso la sede del destinatario <br/> PSR Toscana 2014/2020 sottomisura 2.1, CUP ARTEA cup artea n&deg; 901854</h2>
+
+            <h3>Periodo dal {{ schedule.from.format('Y-m-d') }} al {{ schedule.to.format('Y-m-d') }}</h3>
+
+            <p class="stats">{{ schedule_manager.stats }}</p>
         </header>
 
         <main id="content">
@@ -19,7 +24,11 @@
             {% for consultant in consultants %}
             <article class="consultant">
                 <header>
-                    <h1>{{ consultant.name }} <span class="job">{{ consultant.job }}</span></h1>
+                    <h1>
+                        <span class="name">{{ consultant.name | upper }}</span>
+                        <span class="job">{{ consultant.job }}</span>
+                        <span class="hours">{{ consultant.hours_on_premises }} ore presso la sede del destinatario</span>
+                    </h1>
                 </header>
 
                 <div class="tasks">
