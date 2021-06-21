@@ -26,11 +26,11 @@
                     <div class="headings">
                         <span>data</span>
                         <span>orario</span>
-                        <span>destinataio</span>
+                        <span>destinatario</span>
                         <span>luogo</span>
                     </div>
 
-                    {% for task in consultant.tasks|slice(0, 80) %}
+                    {% for task in consultant.tasks %}
                     <div class="task">
                         <span>{{ task.date }}</span>
                         <span>{{ task.start }} - {{ task.end }}</span>
