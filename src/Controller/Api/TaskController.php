@@ -93,7 +93,7 @@ class TaskController extends AbstractController
         $data = [];
         foreach ($tasks as $task) {
             /** @var Task $task */
-            $isOnPremises = $task->getOnPremises();
+            $isOnPremises = $task->isOnPremises();
 
             $data[] = [
                 'id' => $task->getId(),
@@ -109,7 +109,7 @@ class TaskController extends AbstractController
                     false => 'cornflowerblue'
                 },
                 'extendedProps' => [
-                    'on_premises' => $task->getOnPremises(),
+                    'on_premises' => $task->isOnPremises(),
                     'consultant' => $task->getConsultant()->getName(),
                     'recipient' => $task->getRecipient()->getName(),
                     'recipient_location' => $task->getRecipient()->getHeadquarters(),

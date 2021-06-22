@@ -137,7 +137,7 @@ class ScheduleManager
             } else
                 $this->consultantHours[$consultant] += $task->getHours();
 
-            if ($task->getOnPremises()) {
+            if ($task->isOnPremises()) {
                 if (!isset($this->consultantHoursOnPremises[$consultant])) {
                     $this->consultantHoursOnPremises[$consultant] = $task->getHours();
                 } else
@@ -224,7 +224,7 @@ class ScheduleManager
                 $taskHours = $task->getHours();
 
                 $total += $taskHours;
-                if ($task->getOnPremises())
+                if ($task->isOnPremises())
                     $onPremises += $taskHours;
             }
         }

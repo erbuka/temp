@@ -106,7 +106,7 @@ class Slot implements \Stringable
     {
         foreach ($this->tasks as $task) {
             /** @var Task $task */
-            if ($task->getContractedService() === $cs && $task->getOnPremises())
+            if ($task->getContractedService() === $cs && $task->isOnPremises())
                 return true;
         }
 

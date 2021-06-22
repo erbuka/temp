@@ -36,7 +36,7 @@ class MatchContractedServiceHoursValidator extends ConstraintValidator
 
             $taskSeconds = $task->getEnd()->getTimestamp() - $task->getStart()->getTimestamp();
             $allocatedSeconds[$cs] += $taskSeconds;
-            if ($task->getOnPremises())
+            if ($task->isOnPremises())
                 $allocatedSecondsOnPremises[$cs] += $taskSeconds;
         }
 

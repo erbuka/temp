@@ -90,9 +90,8 @@ class FrontController extends AbstractController
         $manager = $scheduleManagerFactory->createScheduleManager($schedule);
         $tasksByConsultant = $manager->getTasksByConsultant();
 
-        // TODO ensure sorting by consultant name
         $consultantsSortedByName = iterator_to_array($tasksByConsultant);
-        usort($consultantsSortedByName, fn($c1, $c2) => $c1->getName() <=> $c2->getName());
+        usort($consultantsSortedByName, fn(/** @var Consultant $c1 */ $c1,/** @var Consultant $c2 */ $c2) => $c1->getName() <=> $c2->getName());
 
         $consultants = [];
         foreach ($consultantsSortedByName as $consultant) {
@@ -101,6 +100,9 @@ class FrontController extends AbstractController
             $tasks = [];
             foreach ($tasksByConsultant[$consultant] as $task) {
                 /** @var Task $task */
+                if (!$task->isOnPremises())
+                    continue;
+
                 $tasks[] = [
                     'date' => $task->getStart()->format('Y-m-d'),
                     'start' => $task->getStart()->format('H:i'),

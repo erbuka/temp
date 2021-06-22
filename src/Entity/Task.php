@@ -138,7 +138,7 @@ class Task implements \Stringable
         return $this;
     }
 
-    public function getOnPremises(): bool
+    public function isOnPremises(): bool
     {
         return $this->onPremises;
     }
@@ -173,7 +173,7 @@ class Task implements \Stringable
             $this->id ?? '',
             $this->getStart()->format(DATE_RFC3339),
             $this->getEnd()->format(DATE_RFC3339),
-            $this->getOnPremises() ? 'on premises' : '',
+            $this->isOnPremises() ? 'on premises' : '',
         );
     }
 

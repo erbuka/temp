@@ -121,9 +121,9 @@ class ScheduleTest extends KernelTestCase
         $this->assertCount(2, $tasks, "Tasks added by consolidation");
         $this->assertEquals($from->setTime(8, 0), $tasks[0]->getStart(), "{$t1} not relocated at 8:00");
         $this->assertEquals($from->setTime(14, 0), $tasks[0]->getEnd(), "{$t1} not expanded to 14:00");
-        $this->assertTrue($tasks[0]->getOnPremises(), "Relocated {$t1} not on-premises");
+        $this->assertTrue($tasks[0]->isOnPremises(), "Relocated {$t1} not on-premises");
         $this->assertEquals($from->setTime(14, 0), $tasks[1]->getStart(), "{$t2} not relocated at 14:00");
         $this->assertEquals($from->setTime(15, 0), $tasks[1]->getEnd(), "{$t2} not expanded to 15:00");
-        $this->assertFalse($tasks[1]->getOnPremises(), "Relocated {$t2} is on-premises");
+        $this->assertFalse($tasks[1]->isOnPremises(), "Relocated {$t2} is on-premises");
     }
 }

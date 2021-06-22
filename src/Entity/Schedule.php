@@ -326,14 +326,13 @@ class Schedule
             /** @var Task[] $tasks */
             if (count($tasks) < 2) continue;
 
-
             $slots = $daySlots[$dayHash];
 
             // Ensure tasks are ordered by ascending start
             usort($tasks, fn(/** @var Task $t1 */ $t1, /** @var Task $t2 */ $t2) => $t1->getStart() <=> $t2->getStart());
 
-            $dayTasksHoursTotal = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
-            $dayTasksHoursOnPremises = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours() * (int) $t->getOnPremises(), 0);
+            $dayTasksHoursTotal = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + (int) $t->getHours(), 0);
+            $dayTasksHoursOnPremises = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + ($t->getHours() * $t->isOnPremises() ? 1 : 0), 0);
             $dayAllocatedSlots = count(array_filter($slots, fn($s) => $s->isAllocated()));
             assert($dayTasksHoursTotal === $dayAllocatedSlots);
 
@@ -406,7 +405,7 @@ class Schedule
             }
 
             $dayTasksHoursTotal_after = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
-            $dayTasksHoursOnPremises_after = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours() * (int) $t->getOnPremises(), 0);
+            $dayTasksHoursOnPremises_after = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + ($t->getHours() * $t->isOnPremises() ? 1 : 0), 0);
             $dayAllocatedSlots_after = count(array_filter($slots, fn($s) => $s->isAllocated()));
             if ($dayTasksHoursTotal !== $dayTasksHoursTotal_after) {
                 assert($dayTasksHoursTotal === $dayTasksHoursTotal_after);
@@ -654,10 +653,11 @@ class Schedule
             /** @var Task[] $tasks */
 
             foreach ($tasks as $task) {
+                /** @var Task $task */
                 $matches = array_filter($tasks,
                     fn ($t) => $t !== $task
                         && $t->getContractedService() === $task->getContractedService()
-                        && $t->getOnPremises() === $task->getOnPremises()
+                        && $t->isOnPremises() === $task->isOnPremises()
                 );
 
                 foreach ($matches as $m) {
