@@ -189,6 +189,11 @@ class ScheduleManager
 
     }
 
+    /**
+     * Do not use cached results.
+     *
+     * @return string
+     */
     public function getStats(): string
     {
         $allocatedSlots = 0;
@@ -532,7 +537,15 @@ class ScheduleManager
                     foreach ($prevSlot->getTasks() as $prevTask) {
                         /** @var Task $prevTask */
                         if ($prevTask->sameActivityOf($task) && $prevTask !== $task && $prevSlotDayHash === $dayHash) {
-                            // Extend previous slot task to include this
+                            /*
+                             * Expands the previous task to include this slot and shrinks the current task.
+                             *
+                             * CACHE
+                             *  - does not change total hours
+                             *  - changes individual task hours
+                             *  - does not add new tasks
+                             *  - removes tasks from schedule
+                             */
 
                             // Shrinks the adjacent task by removing it from the current slot.
                             $task->setStart($slot->getEnd());
@@ -554,5 +567,8 @@ class ScheduleManager
             $prevSlot = $slot;
             $prevSlotDayHash = $dayHash;
         }
+
+        // TODO inefficient but works
+        $this->reloadTasks();
     }
 }
