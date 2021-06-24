@@ -34,7 +34,7 @@ class FrontController extends AbstractController
     {
         $recipient = $this->getDoctrine()->getRepository(Recipient::class)->findOneByTaxId($taxId);
         if (!$recipient)
-            $this->createNotFoundException("No recipient found for tax id {$taxId}");
+            throw $this->createNotFoundException("No recipient found for tax id {$taxId}");
 
         $contract = $this->getDoctrine()->getRepository(Contract::class)->findOneBy(['recipient' => $recipient]);
 
@@ -85,7 +85,7 @@ class FrontController extends AbstractController
     {
         $schedule = $this->getDoctrine()->getRepository(Schedule::class)->findOneBy(['uuid' => $uuid]);
         if (!$schedule)
-            $this->createNotFoundException("No schedule found with uuid={$uuid}");
+            throw $this->createNotFoundException("No schedule found with uuid={$uuid}");
 
         $manager = $scheduleManagerFactory->createScheduleManager($schedule);
         $tasksByConsultant = $manager->getTasksByConsultant();
