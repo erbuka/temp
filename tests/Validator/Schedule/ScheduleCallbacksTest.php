@@ -11,6 +11,8 @@ use App\Entity\Recipient;
 use App\Entity\Schedule;
 use App\Entity\Service;
 use App\Entity\Task;
+use App\ScheduleManager;
+use App\ScheduleManagerFactory;
 use Symfony\Component\Validator\Constraints\NotNullValidator;
 use Symfony\Component\Validator\Test\ConstraintValidatorTestCase;
 
@@ -21,7 +23,8 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
      */
     public function testContractedServiceExcessHoursPerDay(Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
-        
+        $manager = new ScheduleManager($schedule);
+
         $schedule->addTask((new Task())
             ->setContractedService($cs)
             ->setStart($from->setTime(9, 0))
@@ -38,7 +41,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->setEnd($from->setTime(18, 0))
             ->setOnPremises(false));
 
-        $schedule->loadTasksIntoSlots();
+        $manager->reloadTasks();
 
         $schedule->validateContractedServicesDailyHours($this->context);
 
@@ -54,6 +57,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
      */
     public function testOverlappingTasksViolation(Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
+        $manager = new ScheduleManager($schedule);
 
         // Main task to be overlapped
         $schedule->addTask($tMain = (new Task())
@@ -92,7 +96,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->setOnPremises(false));
 
 
-        $schedule->loadTasksIntoSlots();
+        $manager->reloadTasks();
 
         $schedule->validateNoOverlappingTasks($this->context);
 
@@ -127,6 +131,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
      */
     public function testDiscontinuousTask(Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
+        $manager = new ScheduleManager($schedule);
 
         $schedule->addTask($t1 = (new Task())
             ->setContractedService($cs)
@@ -139,7 +144,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->setEnd(($from->setTime(18, 0)))
             ->setOnPremises(true));
 
-        $schedule->loadTasksIntoSlots();
+        $manager->reloadTasks();
 
         $schedule->detectDiscontinuousTasks($this->context);
 

@@ -5,7 +5,6 @@ namespace App\Entity;
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use App\Validator\Constraints as AppAssert;
-use Spatie\Period\Period;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -50,24 +49,6 @@ class Task implements \Stringable
     private bool $onPremises;
 
     /**
-     * Meant to be used when directly querying the database via SQL.
-     * @ORM\Column(type="string", length=150)
-     */
-    private string $consultantName;
-
-    /**
-     * Meant to be used when directly querying the database via SQL.
-     * @ORM\Column(type="string", length=150)
-     */
-    private string $recipientName;
-
-    /**
-     * Meant to be used when directly querying the database via SQL.
-     * @ORM\Column(type="string", length=255)
-     */
-    private string $serviceName;
-
-    /**
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
      * @ORM\JoinColumn(nullable=false)
      */
@@ -92,10 +73,6 @@ class Task implements \Stringable
     public function setContractedService(ContractedService $cs): self
     {
         $this->contractedService = $cs;
-        $this->consultantName = $cs->getConsultant()->getName();
-        $this->recipientName = $cs->getRecipientName();
-        $this->serviceName = $cs->getService()->getName();
-
         return $this;
     }
 

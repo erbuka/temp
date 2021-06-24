@@ -83,7 +83,7 @@ class ImportConsultants extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT TRIM(name) as `name`, title, job as job_title
+SELECT `name`, title, job as job_title
 FROM ".static::RAW_TABLE."
 ";
 
@@ -158,7 +158,7 @@ VALUES (:name, :title, :job_title)
 ");
 
         foreach ($sheetRows as $row) {
-            $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]] ?? null);
             $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]] ?? null);
 

@@ -34,8 +34,9 @@ class ImportServices extends Command
         'hours' => 7,
         'hours_onpremises' => 8,
         'hours_remote' => 9,
-        'after' => 10,
-        'before' => 11,
+        'task_hours_onpremises' => 10,
+        'after' => 11,
+        'before' => 12,
     ];
 
     protected EntityManagerInterface $entityManager;
@@ -92,7 +93,7 @@ class ImportServices extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT TRIM(name) as name, hours, hours_onpremises, hours_remote, description, category, reasons, expectations, steps, `after`, `before`
+SELECT `name`, hours, hours_onpremises, hours_remote, description, category, reasons, expectations, steps, `after`, `before`, hours_onpremises_task
 FROM ".static::RAW_TABLE."
 ";
 
@@ -108,6 +109,7 @@ FROM ".static::RAW_TABLE."
             'steps' => $steps,
             'after' => $after,
             'before' => $before,
+            'hours_onpremises_task' => $taskPreferredHoursOnPremises,
         ]) {
             if (intval($hours) !== (intval($hoursOnPremises) + intval($hoursRemote)))
                 throw new \Exception("Total hours does not equal the sum or remote and on-premises for {$name}");
@@ -124,6 +126,7 @@ FROM ".static::RAW_TABLE."
             $service->setReasons(static::textListToArray($reasons));
             $service->setExpectations(trim($expectations));
             $service->setSteps(static::textListToArray($steps));
+            $service->setTaskPreferredOnPremiseSHours($taskPreferredHoursOnPremises);
             if ($after && ($afterDate = \DateTime::createFromFormat('d/m/Y', $after, new \DateTimeZone('UTC')))) {
                 $afterDate->setTime(0 , 0);
                 $service->setFromDate($afterDate);
@@ -190,12 +193,12 @@ FROM ".static::RAW_TABLE."
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
-(`name`, category, ab, hours, hours_onpremises, hours_remote, description, reasons, expectations, steps, `after`, `before`)
-VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :description, :reasons, :expectations, :steps, :after, :before)
+(`name`, category, ab, hours, hours_onpremises, hours_remote, description, reasons, expectations, steps, `after`, `before`, hours_onpremises_task)
+VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :description, :reasons, :expectations, :steps, :after, :before, :task_hours_onpremises)
 ");
 
         foreach ($sheetRows as $row) {
-            $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'category', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'ab', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'hours', $row[$sheetColumnsMap[$name]], ParameterType::INTEGER);
@@ -205,6 +208,7 @@ VALUES (:name, :category, :ab, :hours, :hours_onpremises, :hours_remote, :descri
             $insert->bindValue($name = 'reasons', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'expectations', $row[$sheetColumnsMap[$name]]);
             $insert->bindValue($name = 'steps', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'task_hours_onpremises', !empty($row[$sheetColumnsMap[$name]]) ? $row[$sheetColumnsMap[$name]] : null, ParameterType::INTEGER);
 
             $insert->bindValue($name = 'after', !empty($row[$sheetColumnsMap[$name]]) ? $row[$sheetColumnsMap[$name]] : null);
             $insert->bindValue($name = 'before', !empty($row[$sheetColumnsMap[$name]]) ? $row[$sheetColumnsMap[$name]] : null);

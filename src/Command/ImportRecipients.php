@@ -83,7 +83,7 @@ class ImportRecipients extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT TRIM(`name`) as `name`, TRIM(taxid) as taxid, headquarters
+SELECT `name`, taxid, headquarters
 FROM ".static::RAW_TABLE."
 ";
 
@@ -162,9 +162,9 @@ VALUES (:taxid, :name, :headquarters)
 ");
 
         foreach ($sheetRows as $row) {
-            $insert->bindValue($name = 'taxid', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'name', $row[$sheetColumnsMap[$name]]);
-            $insert->bindValue($name = 'headquarters', $row[$sheetColumnsMap[$name]]);
+            $insert->bindValue($name = 'taxid', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
+            $insert->bindValue($name = 'headquarters', trim($row[$sheetColumnsMap[$name]]));
 
             $insert->executeStatement();
         }

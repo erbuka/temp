@@ -12,6 +12,8 @@ use App\Entity\Schedule;
 use App\Entity\Service;
 use App\Entity\Task;
 use App\Repository\ScheduleRepository;
+use App\ScheduleManager;
+use App\ScheduleManagerFactory;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 class ScheduleTest extends KernelTestCase
@@ -50,6 +52,7 @@ class ScheduleTest extends KernelTestCase
 
     public function testTasksConsolidationShouldNotConsolidate() {
         $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
+        $manager = $this->getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
         $cs = (new ContractedService())
             ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
             ->setConsultant((new Consultant())->setName('Cugusi Mario'))
@@ -70,7 +73,7 @@ class ScheduleTest extends KernelTestCase
             ->setEnd(($from->setTime(18, 0)))
             ->setOnPremises(false));
 
-        $schedule->loadTasksIntoSlots();
+        $manager->reloadTasks();
         $schedule->consolidateNonOverlappingTasksDaily();
 
         /** @var Task[] $tasks */
@@ -87,6 +90,7 @@ class ScheduleTest extends KernelTestCase
 
     public function testTasksConsolidation() {
         $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
+        $manager = $this->getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
         $cs = (new ContractedService())
             ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
             ->setConsultant((new Consultant())->setName('Cugusi Mario'))
@@ -112,7 +116,7 @@ class ScheduleTest extends KernelTestCase
             ->setEnd(($from->setTime(18, 0)))
             ->setOnPremises(true));
 
-        $schedule->loadTasksIntoSlots();
+        $manager->reloadTasks();
         $schedule->consolidateNonOverlappingTasksDaily();
 
         /** @var Task[] $tasks */

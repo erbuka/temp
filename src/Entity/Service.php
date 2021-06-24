@@ -78,6 +78,11 @@ class Service implements \Stringable
     #[AppAssert\DateTimeUTC]
     private ?\DateTimeInterface $toDate;
 
+    /**
+     * @ORM\Column(type="smallint", options={"unsigned":true}, nullable=true)
+     */
+    private ?int $taskPreferredOnPremisesHours;
+
     public function getName(): string
     {
         return $this->name;
@@ -90,7 +95,6 @@ class Service implements \Stringable
     public function setName(string $name): self
     {
         $this->name = $name;
-
         return $this;
     }
 
@@ -102,7 +106,6 @@ class Service implements \Stringable
     public function setHours(int $hours): self
     {
         $this->hours = $hours;
-
         return $this;
     }
 
@@ -114,7 +117,6 @@ class Service implements \Stringable
     public function setHoursOnPremises(int $hoursOnPremises): self
     {
         $this->hoursOnPremises = $hoursOnPremises;
-
         return $this;
     }
 
@@ -132,7 +134,6 @@ class Service implements \Stringable
     public function setDescription(?string $description): self
     {
         $this->description = $description;
-
         return $this;
     }
 
@@ -144,7 +145,6 @@ class Service implements \Stringable
     public function setCategory(?string $category): self
     {
         $this->category = $category;
-
         return $this;
     }
 
@@ -156,7 +156,6 @@ class Service implements \Stringable
     public function setSteps(?array $steps): self
     {
         $this->steps = $steps;
-
         return $this;
     }
 
@@ -168,7 +167,6 @@ class Service implements \Stringable
     public function setReasons(?array $reasons): self
     {
         $this->reasons = $reasons;
-
         return $this;
     }
 
@@ -180,7 +178,6 @@ class Service implements \Stringable
     public function setExpectations(?string $expectations): self
     {
         $this->expectations = $expectations;
-
         return $this;
     }
 
@@ -192,7 +189,6 @@ class Service implements \Stringable
     public function setFromDate(?\DateTimeInterface $from): self
     {
         $this->fromDate = $from;
-
         return $this;
     }
 
@@ -204,7 +200,17 @@ class Service implements \Stringable
     public function setToDate(?\DateTimeInterface $to): self
     {
         $this->toDate = $to;
+        return $this;
+    }
 
+    public function getTaskPreferredOnPremisesHours(): ?int
+    {
+        return $this->taskPreferredOnPremisesHours;
+    }
+
+    public function setTaskPreferredOnPremiseSHours(?int $taskPreferredOnPremisesHours): self
+    {
+        $this->taskPreferredOnPremisesHours = $taskPreferredOnPremisesHours;
         return $this;
     }
 

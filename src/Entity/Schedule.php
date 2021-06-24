@@ -46,6 +46,8 @@ class Schedule
     private Uuid $uuid;
 
     /**
+     * First day included in the period.
+     *
      * @ORM\Column(name="`from`", type="datetime")
      */
     #[Assert\NotNull]
@@ -53,6 +55,7 @@ class Schedule
     private \DateTimeInterface $from;
 
     /**
+     * Day *after* last day included in the period
      * @ORM\Column(name="`to`", type="datetime")
      */
     #[Assert\NotNull]
@@ -72,75 +75,26 @@ class Schedule
 
     //endregion Persisted fields
 
-    private \SplFixedArray $slots;
-    /** @var array<string, Slot> e.g. '2021020318' => Slot */
-    private array $dayHourSlotMap;
+    /**
+     * Slots are effectively managed by ScheduleManager which sets a reference to the slots when instantiated.
+     */
+    public \SplFixedArray $slots;
     private Period $period;
     private ?ScheduleManager $manager;
 
     /**
      * Invoked only when creating new entities inside the app.
      * Never invoked by Doctrine when retrieving objcts from the database.
+     *
+     * @param \DateTimeInterface $toDay excluded e.g. 2022-07-01T00:00:00 => 2022-06-30T23:00:00
      */
     public function __construct(\DateTimeInterface $fromDay, \DateTimeInterface $toDay)
     {
         $this->tasks = new ArrayCollection();
         $this->uuid = Uuid::v4();
-        $this->period = Period::make($fromDay, $toDay, Precision::DAY(), Boundaries::EXCLUDE_END());
+        $this->period = Period::make($fromDay, $toDay, Precision::HOUR(), Boundaries::EXCLUDE_END());
         $this->from = $this->period->start();
         $this->to = $this->period->end();
-
-        $this->generateSlots();
-    }
-
-    private function generateSlots()
-    {
-        assert(!isset($this->slots), "Refusing to overwrite existing slots in Schedule");
-
-        $eligibleDays = [];
-        $slotsMap = [];
-
-        foreach ($this->getPeriod() as $day) {
-            /** @var \DateTimeImmutable $day */
-
-            if (AppAssert\NotItalianHolidayValidator::isItalianHoliday($day, includePrefestivi: true)) {
-//                $this->output->writeln(sprintf('- %s skipped because it is an holiday', $date->format(self::DATE_NOTIME)));
-                continue;
-            }
-
-            if (in_array($weekday = $day->format('w'), [6,0])) {
-//                $this->output->writeln(sprintf('- %2$s skipped because it is %1$s', $weekday == 6 ? 'Saturday' : 'Sunday', $date->format(self::DATE_NOTIME)));
-                continue;
-            }
-
-            $dayStart = \DateTime::createFromImmutable($day);
-            $dayStart->setTime(8, 0);
-            $dayEnd = (clone $dayStart)->setTime(18, 0);
-
-            $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
-            foreach ($businessHours as $hour) {
-                /** @var \DateTimeImmutable $hour */
-                $slot = new Slot(count($eligibleDays), $hour);
-                $hash = $slot->getStart()->format(static::DATE_SLOTHASH);
-                assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
-
-                $slotsMap[$hash] = $slot;
-                $eligibleDays[] = $slot;
-
-                assert($slot->getIndex() === array_search($slot, $eligibleDays, strict: true));
-            }
-        }
-
-        $this->slots = \SplFixedArray::fromArray($eligibleDays);
-        $this->dayHourSlotMap = $slotsMap;
-    }
-
-    private function getSlots(): \SplFixedArray
-    {
-        if (!isset($this->slots))
-            $this->generateSlots();
-
-        return $this->slots;
     }
 
     /**
@@ -150,7 +104,7 @@ class Schedule
      */
     public function getRandomFreeSlot(\DateTimeInterface $after = null, \DateTimeInterface $before = null): ?Slot
     {
-        $slots = $this->getSlots();
+        $slots = $this->slots;
 
         $index = rand(0, $slots->getSize() - 1);
         /** @var Slot $slot */
@@ -168,10 +122,13 @@ class Schedule
         return $this->getClosestFreeSlot($slot, $direction);
     }
 
+    /**
+     * @deprecated
+     */
     public function getClosestFreeSlot(Slot $slot, string $direction = 'both'): ?Slot
     {
         $slotIndex = $slot->getIndex();
-        $slots = $this->getSlots();
+        $slots = $this->slots;
         assert(-1 < $slotIndex && $slotIndex < $slots->getSize(), "Given slot index {$slotIndex} out of bounds [0, {$slots->getSize()}]");
 
         $closestBefore = $closestAfter = null;
@@ -232,62 +189,8 @@ class Schedule
      */
     public function getStats(): string
     {
-        if (!$this->manager)
-            return "A manager needs to be instantiated for this schedule to have stats availble";
-
+        assert($this->manager !== null);
         return $this->manager->getStats();
-    }
-
-    /**
-     * A task is a contiguous amount of time that will start at some slot and end in another.
-     */
-    public function loadTasksIntoSlots()
-    {
-        $tasks = $this->getTasks();
-        if (!isset($this->slots))
-            $this->generateSlots();
-
-        // hash each slot by datetime Ymd-h
-        foreach ($tasks as $task) {
-            /** @var Task $task */
-            $this->loadTaskIntoSlot($task);
-        }
-    }
-
-    protected function loadTaskIntoSlot(Task $task)
-    {
-        // A task is considered to belong to a slot iff its starting
-        $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
-
-        foreach ($period as $hour) {
-            $key = $hour->format(static::DATE_SLOTHASH);
-            if (!isset($this->dayHourSlotMap[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->getPeriod()->asString()}");
-            assert($this->dayHourSlotMap[$key] instanceof Slot, "Map does not return a slot");
-
-            $this->dayHourSlotMap[$key]->addTask($task);
-        }
-    }
-
-    /**
-     * and could deal with straight tasks considering the fact that
-     * loading tasks (from the database) into slots is the same problem.
-     *
-     * Sets $this as the owning schedule of each merged task.
-     *
-     * N.B. I assume each task is uniquely identified by (contracted service, on-premises)
-     * N.B. 2: assert tasks do not overlap
-     */
-    public function merge(Schedule ...$sources)
-    {
-        foreach ($sources as $schedule) {
-            foreach ($schedule->getTasks() as $task) {
-                /** @var Task $task */
-                $this->addTask($task);
-                $task->setSchedule($this);
-                $this->loadTaskIntoSlot($task);
-            }
-        }
     }
 
     /**
@@ -300,7 +203,7 @@ class Schedule
         // Slots ordered by ascending time
 
         // Group tasks by day
-        foreach ($this->getSlots() as $slot) {
+        foreach ($this->slots as $slot) {
             /** @var Slot $slot */
             assert(count($slot->getTasks()) < 2, "Slot {$slot} contains overlapping tasks");
 
@@ -421,11 +324,10 @@ class Schedule
 
     /**
      * @param Slot $initialSlot
-     * @param ContractedService $contractedServiceService
      * @param int $maxSlots
      * @return Slot[]
      */
-    public function allocateContractedServicePass(Slot $initialSlot, ContractedService $contractedServiceService, int $maxSlots = 5): array
+    public function allocateContractedServicePass(Slot $initialSlot, int $maxSlots = 5): array
     {
         assert($initialSlot->isAllocated(), "Initial slot should be allocated");
 
@@ -436,10 +338,10 @@ class Schedule
             1 => 'before',
         };
         /** @var ?Slot $next */
-        $next = $this->getClosestFreeSlot($initialSlot, $direction);
+        $next = $this->manager->getClosestFreeSlot($initialSlot);
         if (!$next) {
             $direction = $direction == 'before' ? 'after' : 'before';
-            $next = $this->getClosestFreeSlot($initialSlot, $direction);
+            $next = $this->manager->getClosestFreeSlot($initialSlot, direction: $direction);
         }
 
         if (!$next) throw new \RuntimeException('No more slots to allocate');
@@ -502,7 +404,6 @@ class Schedule
     public function setManager(?ScheduleManager $manager): self
     {
         $this->manager = $manager;
-
         return $this;
     }
 
@@ -511,7 +412,7 @@ class Schedule
     /**
      * A contracted service cannot be assigned more than 5 hours (=slots) per day.
      *
-     * @deprecated
+     * @deprecated not actually used.. but maybe should be used for on-premises tasks?
      */
 //    #[Assert\Callback]
     public function validateContractedServicesDailyHours(ExecutionContextInterface $context)
@@ -671,22 +572,11 @@ class Schedule
         }
     }
 
-    /**
-     * Whether multiple tasks are scheduled for a recipient but they are not adjacent to each other
-     * resulting in the consultant going back and forth at the client  multiple times in the same day.
-     */
-    #[Assert\Callback(groups: ['consultant'])]
-    public function detectNotGroupedByClient()
-    {
-
-    }
 
     public function assertZeroOrOneTaskPerSlot(): void
     {
         foreach ($this->slots as $slot) {
             /** @var Slot $slot */
-            $reason = sprintf("Failed to assert that slot {$slot} contains only one task: tasks=%d", count($slot->getTasks()));
-
             if (count($slot->getTasks()) > 1)
                 throw new \LogicException(sprintf("Failed to assert that slot {$slot} contains at most one task: count=%d", count($slot->getTasks())));
         }
@@ -749,7 +639,7 @@ class Schedule
     public function getPeriod(): Period
     {
         if (!isset($this->period))
-            $this->period = Period::make($this->getFrom(), $this->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END());
+            $this->period = Period::make($this->getFrom(), $this->getTo(), Precision::HOUR(), Boundaries::EXCLUDE_END());
 
         return $this->period;
     }
