@@ -60,6 +60,12 @@ class Task implements \Stringable
      */
     private ContractedService $contractedService;
 
+    /**
+     * Meant to be used when directly querying the database via SQL.
+     * @ORM\Column(type="string", length=150)
+     */
+    private string $consultantName;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -73,6 +79,7 @@ class Task implements \Stringable
     public function setContractedService(ContractedService $cs): self
     {
         $this->contractedService = $cs;
+        $this->consultantName = $cs->getConsultant()->getName();
         return $this;
     }
 
