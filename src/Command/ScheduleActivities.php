@@ -47,8 +47,8 @@ class ScheduleActivities extends Command
         $this->scheduleGenerator = $scheduleGenerator;
         $this->scheduleManagerFactory = $scheduleManagerFactory;
 
-        $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-01T00:00:00Z');
-        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-07-01T00:00:00Z');
+        $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-08T00:00:00Z');
+        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-07-08T00:00:00Z');
 
         parent::__construct();
     }
