@@ -196,6 +196,7 @@ class ScheduleManager
 //        $slotsCount = $this->slots->getSize(); // ::count() and count() are equivalent to ::getSize()
         $allocatedTasks = new \SplObjectStorage(); // Task => count of slots in which the task is included
         $taskHours = 0;
+        $taskHoursOnPremises = 0;
 
         foreach ($this->slots as $slot) {
             /** @var Slot $slot */
@@ -211,20 +212,22 @@ class ScheduleManager
                 else
                     $allocatedTasks[$task] += 1;
 
-                $taskHours += $task->getHours();
+                $taskHours += 1;
+                $taskHoursOnPremises += $task->isOnPremises() ? 1 : 0;
             }
         }
         assert($freeSlots + $allocatedSlots === count($this->slots), "free=$freeSlots + allocated=$allocatedSlots !== count={$this->slots->count()}");
         assert(count($allocatedTasks) === $this->schedule->getTasks()->count(), "Task count doesnt match");
 
-        return sprintf("id=%s period=%s | slots=%d free=%d | tasks=%d hours=%d consultants=%d",
+        return sprintf("id=%s period=%s consultants=%d | slots=%d free=%d | tasks=%d hours=%d onpremises=%d",
             $this->id ?? $this->schedule->getUuid()->toRfc4122(),
             $this->period->asString(),
+            count($this->tasksByConsultant),
             count($this->slots),
             $freeSlots,
             count($allocatedTasks),
             $taskHours,
-            count($this->tasksByConsultant)
+            $taskHoursOnPremises,
         );
     }
 
@@ -511,34 +514,45 @@ class ScheduleManager
     }
 
 
+    /**
+     * Assumes slots ordered by time.
+     */
     public function consolidateSameDayAdjacentTasks(): void
     {
-        throw new \RuntimeException('not implmente');
-
-        // does not store duplicated tasks
-        $dayTasks = new \SplObjectStorage();
-
         $prevSlot = null;
         $prevSlotDayHash = null;
         foreach ($this->slots as $slot) {
             /** @var Slot $slot */
             $dayHash = $slot->getStart()->format(static::DATE_DAYHASH);
 
-            foreach ($slot->getTasks() as $task) {
-                // if already present (via equality), then extend the present one to slot->getEnd
-                // --> AND
-                $dayTasks->attach($task); //
-            }
+            // Skip initial slot
+            if ($prevSlot && $prevSlotDayHash) {
+                foreach ($slot->getTasks() as $task) {
+                    // if already present (via equality), then extend the present one to slot->getEnd()
+                    foreach ($prevSlot->getTasks() as $prevTask) {
+                        /** @var Task $prevTask */
+                        if ($prevTask->sameActivityOf($task) && $prevTask !== $task && $prevSlotDayHash === $dayHash) {
+                            // Extend previous slot task to include this
 
-            if ($prevSlot && $prevSlotDayHash !== $dayHash) {
-                // consolidate?
+                            // Shrinks the adjacent task by removing it from the current slot.
+                            $task->setStart($slot->getEnd());
+                            $slot->removeTask($task);
+
+                            // Expands the repeated task in the current slot
+                            $slot->addTask($prevTask);
+                            $prevTask->setEnd($slot->getEnd());
+
+                            // Remove the adjacent task if it has been completely merged.
+                            if ($task->getStart()->diff($task->getEnd(), true)->h === 0) {
+                                $this->schedule->removeTask($task);
+                            }
+                        }
+                    }
+                }
             }
 
             $prevSlot = $slot;
-            $prevSlotHash = $dayHash;
+            $prevSlotDayHash = $dayHash;
         }
-
-        // consolidation
-        // consolidate when the task is no more present
     }
 }

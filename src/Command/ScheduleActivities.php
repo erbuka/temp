@@ -70,6 +70,8 @@ class ScheduleActivities extends Command
 
 //            $this->entityManager->persist($consultantSchedule);
 //            $this->entityManager->flush();
+//            return Command::SUCCESS;
+
             $manager->merge($consultantSchedule);
 
             $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));

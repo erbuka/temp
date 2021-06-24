@@ -130,4 +130,103 @@ class ScheduleTest extends KernelTestCase
         $this->assertEquals($from->setTime(15, 0), $tasks[1]->getEnd(), "{$t2} not expanded to 15:00");
         $this->assertFalse($tasks[1]->isOnPremises(), "Relocated {$t2} is on-premises");
     }
+
+    public function testSameDayAdjacentTasksConsolidation() {
+        $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
+        $manager = $this->getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+        $cs = (new ContractedService())
+            ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
+            ->setConsultant((new Consultant())->setName('Cugusi Mario'))
+            ->setService((new Service())->setName('3. Zootecnica')
+                ->setHours(34)
+                ->setHoursOnPremises(24)
+        );
+        $cs2 = (new ContractedService())
+            ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #1')))
+            ->setConsultant((new Consultant())->setName('Belelli Fiorenzo'))
+            ->setService((new Service())->setName('3. Direttiva acque')
+                ->setHours(34)->setHoursOnPremises(24)
+        );
+
+        $schedule->addTask($t1 = (new Task())
+            ->setContractedService($cs)
+            ->setStart($from->setTime(9, 0))
+            ->setEnd(($from->setTime(11, 0)))
+            ->setOnPremises(true));
+        $schedule->addTask($t2 = (new Task())
+            ->setContractedService($cs)
+            ->setStart($from->setTime(11, 0))
+            ->setEnd(($from->setTime(14, 0)))
+            ->setOnPremises(true));
+        $schedule->addTask($t3 = (new Task())
+            ->setContractedService($cs)
+            ->setStart($from->setTime(14, 0))
+            ->setEnd(($from->setTime(15, 0)))
+            ->setOnPremises(true));
+
+        $schedule->addTask($t5 = (new Task())
+            ->setContractedService($cs2)
+            ->setStart($from->setTime(12, 0))
+            ->setEnd(($from->setTime(13, 0)))
+            ->setOnPremises(true));
+        $schedule->addTask($t6 = (new Task())
+            ->setContractedService($cs2)
+            ->setStart($from->setTime(13, 0))
+            ->setEnd(($from->setTime(16, 0)))
+            ->setOnPremises(true));
+
+        $manager->reloadTasks();
+        $manager->consolidateSameDayAdjacentTasks();
+
+        $tasks = $schedule->getTasks();
+
+        $this->assertCount(2, $tasks, "Tasks added by consolidation");
+        $this->assertTrue($tasks->contains($t1), "Task {$t1} should not be removed in consolidation");
+        $this->assertFalse($tasks->contains($t2), "Task {$t2} not consolidated");
+        $this->assertFalse($tasks->contains($t3), "Task {$t3} not consolidated");
+        $this->assertEquals($from->setTime(9, 0), $t1->getStart(), "Adjacent tasks of {$t1} not consolidated: wrong start");
+        $this->assertEquals($from->setTime(15, 0), $t1->getEnd(), "Adjacent tasks of {$t1} not consolidated: wrong end");
+
+        $this->assertTrue($tasks->contains($t5), "Task {$t5} should not be removed in consolidation");
+        $this->assertFalse($tasks->contains($t6), "Task {$t2} not consolidated");
+        $this->assertEquals($from->setTime(12, 0), $t5->getStart(), "Adjacent tasks of {$t5} not consolidated: wrong start");
+        $this->assertEquals($from->setTime(16, 0), $t5->getEnd(), "Adjacent tasks of {$t5} not consolidated: wrong end");
+
+    }
+
+    public function testSameDayAdjacentTasksConsolidationShouldNotMergeAcrossDays() {
+        $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-21'), $from->modify('+1 week'));
+        $manager = $this->getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+        $cs = (new ContractedService())
+            ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
+            ->setConsultant((new Consultant())->setName('Cugusi Mario'))
+            ->setService((new Service())->setName('3. Zootecnica')
+                ->setHours(34)
+                ->setHoursOnPremises(24)
+            );
+
+        $schedule->addTask($t1 = (new Task())
+            ->setContractedService($cs)
+            ->setStart($from->setTime(15, 0))
+            ->setEnd(($from->setTime(18, 0)))
+            ->setOnPremises(false));
+        $schedule->addTask($t2 = (new Task())
+            ->setContractedService($cs)
+            ->setStart($from->modify('+1 day')->setTime(8, 0))
+            ->setEnd(($from->modify('+1 day')->setTime(12, 0)))
+            ->setOnPremises(false));
+
+        $manager->reloadTasks();
+        $manager->consolidateSameDayAdjacentTasks();
+
+        /** @var Task[] $tasks */
+        $tasks = $schedule->getTasks();
+
+        $this->assertCount(2, $tasks, "Tasks added by consolidation");
+        $this->assertEquals($from->setTime(15, 0), $t1->getStart(), "Changed non adjacent tasks start hour {$t1}");
+        $this->assertEquals($from->setTime(18, 0), $t1->getEnd(), "Changed non adjacent tasks end hour {$t1}");
+        $this->assertEquals($from->modify('+1 day')->setTime(8, 0), $t2->getStart(), "Changed non adjacent tasks start hour {$t2}");
+        $this->assertEquals($from->modify('+1 day')->setTime(12, 0), $t2->getEnd(), "Changed non adjacent tasks end hour {$t2}");
+
+    }
 }

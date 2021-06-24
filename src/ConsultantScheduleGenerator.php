@@ -66,18 +66,19 @@ class ConsultantScheduleGenerator
         $manager = $this->scheduleManagerFactory->createScheduleManager($schedule);
 
         $this->allocateOnPremisesHours($manager);
-        $initialSlots = $this->allocateInitialSlots($manager);
+//        $initialSlots = $this->allocateInitialSlots($manager);
 
         // N.B. Slots will contain at most 1 task because individual consultant schedules do not allow overlap
 
-        $dog = 10000;
-        do {
-            $this->allocationPass($schedule, $initialSlots);
-            $unallocatedHours = $contractedHours - count($this->allocatedSlots);
-        } while ($unallocatedHours > 0 && $dog-- > 0);
-        assert($dog > 0, "Watchdog triggered!");
+//        $dog = 10000;
+//        do {
+//            $this->allocationPass($schedule, $initialSlots);
+//            $unallocatedHours = $contractedHours - count($this->allocatedSlots);
+//        } while ($unallocatedHours > 0 && $dog-- > 0);
+//        assert($dog > 0, "Watchdog triggered!");
 
         $schedule->assertZeroOrOneTaskPerSlot();
+        $manager->consolidateSameDayAdjacentTasks();
         $schedule->consolidateNonOverlappingTasksDaily();
 
         // Validate consultant Schedule
@@ -106,9 +107,6 @@ class ConsultantScheduleGenerator
             assert($service !== null, "ContractedService has service === null");
             assert($service->getHoursOnPremises() > 0, "Service does not have any on-premises hours");
 
-            // Allocate initial task for on premises hours
-            // TODO instead of expanding afterwards, just request a certain number of free slots
-
             $onPremisesHours = $service->getHoursOnPremises();
             $preferredHours = $service->getTaskPreferredOnPremisesHours() ?? 2;
 
@@ -133,8 +131,6 @@ class ConsultantScheduleGenerator
 
                     $backwardsPeriod = $backwardsPeriod->overlap($schedule->getPeriod());
                     $forwardsPeriod = $forwardsPeriod->overlap($schedule->getPeriod());
-
-                    assert($backwardsPeriod || $forwardsPeriod);
                 }
 
                 if (!$backwardsPeriod)
@@ -148,6 +144,8 @@ class ConsultantScheduleGenerator
                     false => $backwardsPeriod,
                     true => $forwardsPeriod
                 };
+
+                if (!$period) $period = $schedule->getPeriod();
 
                 if ($period->length() < 2*10)
                     $period = $schedule->getPeriod();
@@ -171,7 +169,7 @@ class ConsultantScheduleGenerator
                     );
 
                 if (count($slots) === 0) {
-                    throw new \RuntimeException('wtf');
+                    throw new \RuntimeException('No slots allocated. Out of slots?');
                 }
 
                 foreach ($slots as $slot) {

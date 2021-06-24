@@ -21,7 +21,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
 #[ScheduleAssert\TasksWithinBounds]
-#[ScheduleAssert\MatchContractedServiceHours]
+#[ScheduleAssert\MatchContractedServiceHours(onPremisesOnly: true)]
 class Schedule
 {
     const DATE_NOTIME = 'Y-m-d';

@@ -35,6 +35,7 @@ must be performed. When entities are created/updated programmatically, the Valid
 
 
 ## Deployment
+- `bin/console cache:clear`
 - `APP_ENV=prod ./composer.phar install --no-dev --classmap-authoritative`
 - `./composer.phar dump-autoload --no-dev --classmap-authoritative`
 - `./composer.phar dump-env prod`. Note that real environment variables always win over ones declared in .env files.

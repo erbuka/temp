@@ -46,15 +46,17 @@ class MatchContractedServiceHoursValidator extends ConstraintValidator
                 throw new \RuntimeException(sprintf("%d seconds allocated for contracted service %s are not multiple of 1 hour", $allocatedSeconds[$cs], $cs));
             }
 
-            $hours = (int) $allocatedSeconds[$cs] / 3600;
-            if ($cs->getHours() !== $hours) {
-                $this->context->buildViolation($constraint->message)
-                    ->setParameter('{{ contracted_service }}', $cs)
-                    ->setParameter('{{ type }}', 'total')
-                    ->setParameter('{{ expected }}', $cs->getHours())
-                    ->setParameter('{{ actual }}', $hours)
-                    ->addViolation()
-                ;
+            if (!$constraint->onPremisesOnly) {
+                $hours = (int) $allocatedSeconds[$cs] / 3600;
+                if ($cs->getHours() !== $hours) {
+                    $this->context->buildViolation($constraint->message)
+                        ->setParameter('{{ contracted_service }}', $cs)
+                        ->setParameter('{{ type }}', 'total')
+                        ->setParameter('{{ expected }}', $cs->getHours())
+                        ->setParameter('{{ actual }}', $hours)
+                        ->addViolation()
+                    ;
+                }
             }
 
             $hoursOnPremises = (int) $allocatedSecondsOnPremises[$cs] / 3600;
