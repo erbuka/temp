@@ -514,7 +514,7 @@ class ScheduleManager
     public function consolidateSameDayAdjacentTasks(): void
     {
         throw new \RuntimeException('not implmente');
-        
+
         // does not store duplicated tasks
         $dayTasks = new \SplObjectStorage();
 
