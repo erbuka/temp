@@ -48,7 +48,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
         $this->buildViolation($schedule->violationMessageContractedServiceExcessDailyHours)
             ->setParameter('{{ cs }}', $cs)
             ->setParameter('{{ hours }}', 7)
-            ->setParameter('{{ day }}', $from->format(Schedule::DATE_NOTIME))
+            ->setParameter('{{ day }}', $from->format(ScheduleManager::DATE_NOTIME))
             ->assertRaised();
     }
 
@@ -154,11 +154,11 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             // INSIDE
             ->buildViolation(Schedule::VIOLATION_DISCONTINUOUS_TASK)
             ->setParameter('{{ task }}', (string) $t2)
-            ->setParameter('{{ day }}', (string) $from->format(Schedule::DATE_NOTIME))
+            ->setParameter('{{ day }}', (string) $from->format(ScheduleManager::DATE_NOTIME))
             ->setParameter('{{ contracted_service }}', $cs)
             ->buildNextViolation(Schedule::VIOLATION_DISCONTINUOUS_TASK)
             ->setParameter('{{ task }}', (string) $t1)
-            ->setParameter('{{ day }}', (string) $from->format(Schedule::DATE_NOTIME))
+            ->setParameter('{{ day }}', (string) $from->format(ScheduleManager::DATE_NOTIME))
             ->setParameter('{{ contracted_service }}', $cs)
 
             ->assertRaised();

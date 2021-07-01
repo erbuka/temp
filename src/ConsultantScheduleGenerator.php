@@ -65,7 +65,7 @@ class ConsultantScheduleGenerator
         $schedule = new Schedule($from, $to);
         $manager = $this->scheduleManagerFactory->createScheduleManager($schedule);
 
-        $this->allocateOnPremisesHours($manager);
+        $this->allocateOnPremisesHours($schedule);
 //        $initialSlots = $this->allocateInitialSlots($manager);
 
         // N.B. Slots will contain at most 1 task because individual consultant schedules do not allow overlap
@@ -77,9 +77,9 @@ class ConsultantScheduleGenerator
 //        } while ($unallocatedHours > 0 && $dog-- > 0);
 //        assert($dog > 0, "Watchdog triggered!");
 
-        $schedule->assertZeroOrOneTaskPerSlot();
+        $manager->assertZeroOrOneTaskPerSlot();
         $manager->consolidateSameDayAdjacentTasks();
-        $schedule->consolidateNonOverlappingTasksDaily();
+        $manager->consolidateNonOverlappingTasksDaily();
 
         // Validate consultant Schedule
         if (count($errors = $this->validator->validate($schedule, null, ['Default', 'consultant'])) > 0)
@@ -88,15 +88,14 @@ class ConsultantScheduleGenerator
         return $schedule;
     }
 
-    private function allocateOnPremisesHours(ScheduleManager $manager): void
+    private function allocateOnPremisesHours(Schedule $schedule): void
     {
         assert(count($this->allocatedSlots) === 0, "On premises hours must be allocated before others");
+        $manager = $this->scheduleManagerFactory->createScheduleManager($schedule);
 
         // expand initial slots by
         // 1) allocate on the same day the hours established by each service for on premises consultancy
         // 2) allocate in tasks distant between 7-14 days the remaining hours
-
-        $schedule = $manager->getSchedule();
 
         foreach ($this->contractedServices as $contractedService) {
             $recipient = $contractedService->getRecipient();
@@ -145,62 +144,63 @@ class ConsultantScheduleGenerator
                     true => $forwardsPeriod
                 };
 
-                if (!$period) $period = $schedule->getPeriod();
+                $mirrorPeriod = match ($period) {
+                    $backwardsPeriod => $forwardsPeriod,
+                    $forwardsPeriod => $backwardsPeriod,
+                };
 
-                if ($period->length() < 2*10)
-                    $period = $schedule->getPeriod();
+                if (!$period || $period->length() < 2*10) $period = $schedule->getPeriod();
 
                 assert($period !== null, "Unable to select a period to be used to fetch random slots");
                 assert($period->overlapsWith($schedule->getPeriod()));
 
-                $slots = $manager->getRandomFreeSlotsSameDay(
-                    preferred: min($preferredHours, $onPremisesHours),
-                    period: $period
-                );
-                if (empty($slots))
-                    $slots = $manager->getRandomFreeSlotsSameDay(
-                        preferred: min($preferredHours, $onPremisesHours),
-                        period: $period
-                    );
-                if (empty($slots))
-                    $slots = $manager->getRandomFreeSlotsSameDay(
-                        preferred: min($preferredHours, $onPremisesHours),
-                        period: $schedule->getPeriod()
-                    );
+                // TODO try getting random adjacent slots on the same day
+                // if that fails, then just randomly allocate on the same day ** AND CONSOLIDATE + COMPACT **
 
-                if (count($slots) === 0) {
-                    throw new \RuntimeException('No slots allocated. Out of slots?');
+                $task = new Task();
+                $task->setContractedService($contractedService);
+                $task->setOnPremises(true);
+//                $task->setStart($slot->getStart()); // truncated by precision
+//                $task->setEnd($slot->getEnd()); // truncated by precision
+
+                try {
+                    $manager->allocateAdjacentSameDaySlots($task,
+                        preferred: min($preferredHours, $onPremisesHours),
+                        period: $period,
+                    );
+                } catch (NoSlotsAvailableException $e) {
+                    try {
+                        $manager->allocateAdjacentSameDaySlots($task,
+                            preferred: min($preferredHours, $onPremisesHours),
+                            period: $mirrorPeriod,
+                        );
+                    } catch (NoSlotsAvailableException $e) {
+                        $manager->allocateAdjacentSameDaySlots($task,
+                            preferred: min($preferredHours, $onPremisesHours),
+                            period: $schedule->getPeriod()
+                        );
+                    }
                 }
 
-                foreach ($slots as $slot) {
-                    $task = new Task();
-                    $task->setContractedService($contractedService);
-                    $task->setStart($slot->getStart()); // truncated by precision
-                    $task->setEnd($slot->getEnd()); // truncated by precision
-                    $task->setOnPremises(true);
+                if (count($errors = $this->validator->validate($task)) > 0)
+                    throw new \Exception("Cannot validate task {$task} of contracted service {$contractedService}: ". $errors);
 
-                    if (count($errors = $this->validator->validate($task)) > 0)
-                        throw new \Exception("Cannot validate task {$task} of contracted service {$contractedService}: ". $errors);
 
-                    $slot->addTask($task);
-                    $manager->addTask($task);
-                    $this->allocatedSlots->attach($slot);
+                if (!$head || $task->getStart() < $head)
+                    $head = \DateTimeImmutable::createFromInterface($task->getStart()); // to be excluded in backwards
+                if (!$tail || $task->getEnd() > $tail)
+                    $tail = \DateTimeImmutable::createFromInterface($task->getEnd());
 
-                    if (!$head || $slot->getStart() < $head)
-                        $head = \DateTimeImmutable::createFromInterface($slot->getStart()); // to be excluded in backwards
-                    if (!$tail || $slot->getEnd() > $tail)
-                        $tail = \DateTimeImmutable::createFromInterface($slot->getEnd());
-                }
 
-                $onPremisesHours -= count($slots);
+                $onPremisesHours -= $task->getHours();
 
                 $this->output->writeln(
-                    sprintf("<info>[ALLOCATION PASS cs=<fg=cyan>%-3d</>]</info> Allocated %d on premises hours", $contractedService->getId(), count($slots)),
+                    sprintf("<info>[ALLOCATION PASS cs=<fg=cyan>%-3d</>]</info> Allocated %d on premises hours of preferred %d", $contractedService->getId(), $task->getHours(), $preferredHours),
                     OutputInterface::VERBOSITY_VERBOSE
                 );
             }
 
-            $all = $schedule->countSlotsAllocatedToContractedService($contractedService);
+            $all = $manager->countSlotsAllocatedToContractedService($contractedService);
 
             assert($all == $service->getHoursOnPremises(), "Allocated {$all} != {$service->getHoursOnPremises()} hours for contracted service {$contractedService}");
         }
@@ -267,6 +267,7 @@ class ConsultantScheduleGenerator
      * @param Schedule $schedule
      * @param array $startingSlots
      * @throws \Exception
+     * @deprecated
      */
     private function allocationPass(Schedule $schedule, array $startingSlots)
     {

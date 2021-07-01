@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Consultant;
 use App\Entity\Schedule;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Common\Collections\Criteria;
@@ -24,6 +25,12 @@ class ScheduleRepository extends ServiceEntityRepository
     {
         return Criteria::create()
             ->orderBy(['start' => Criteria::ASC]);
+    }
+
+    public static function createTasksFilteredByConsultantCriteria(Consultant $consultant): Criteria
+    {
+        return Criteria::create()
+            ->where(Criteria::expr()->eq('consultantName', $consultant->getName()));
     }
 
     // /**

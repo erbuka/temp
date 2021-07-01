@@ -65,6 +65,11 @@ class Slot implements \Stringable
         $this->tasks->detach($task);
     }
 
+    public function containsTask(Task $task): bool
+    {
+        return $this->tasks->contains($task);
+    }
+
     public function getTasks(): array
     {
         return iterator_to_array($this->tasks);

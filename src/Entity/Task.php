@@ -62,6 +62,8 @@ class Task implements \Stringable
 
     /**
      * Meant to be used when directly querying the database via SQL.
+     * Also used by ConsultantSchedule to filter the collection by Consultant.
+     *
      * @ORM\Column(type="string", length=150)
      */
     private string $consultantName;

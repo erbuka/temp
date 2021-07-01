@@ -3,9 +3,11 @@
 
 namespace App\Controller\Api;
 
+use App\ConsultantSchedule;
 use App\Entity\Consultant;
 use App\Entity\Schedule;
 use App\Entity\Task;
+use App\ScheduleManagerFactory;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
@@ -16,6 +18,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpKernel\Attribute\AsController;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[AsController]
 #[Route('/tasks', name: 'calendar-tasks_')]
@@ -140,5 +143,25 @@ class TaskController extends AbstractController
     public function delete()
     {
 
+    }
+
+    #[Route('/test', name: 'test', methods: ['GET'])]
+    public function test(ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): Response
+    {
+        $entityManager = $this->getDoctrine()->getManager();
+
+        $schedule = current($entityManager->getRepository(Schedule::class)->findAll());
+        assert($schedule !== null);
+
+        $consultant = $entityManager->getRepository(Consultant::class)->find('Belelli Fiorenzo');
+        assert($consultant !== null);
+
+        $s = ConsultantSchedule::fromSchedule($schedule, $consultant);
+
+        $manager = $scheduleManagerFactory->createScheduleManager($s);
+
+        $validator->validate($s);
+
+        return new Response('ok');
     }
 }

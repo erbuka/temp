@@ -5,21 +5,27 @@ namespace App;
 
 
 use App\Entity\Consultant;
+use App\Entity\ContractedService;
 use App\Entity\Schedule;
 use App\Entity\Task;
 use App\Repository\ScheduleRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
 use Spatie\Period\Precision;
 use App\Validator\Constraints as AppAssert;
+use Symfony\Component\Validator\Constraints as Assert;
 
-class ScheduleManager
+class ScheduleManager implements ScheduleInterface
 {
     const DATE_NOTIME = 'Y-m-d';
     const DATE_HOURHASH = 'YmdH';
     const DATE_DAYHASH = 'Ymd';
 
+    #[Assert\Valid]
     private Schedule $schedule;
+
     private \SplFixedArray $slots; // NOTA BENE: this is shared (by ref) with Schedule.slots
     /** @var array<string, Slot> e.g. '2021020318' => Slot */
     private array $slotsByDayHours;
@@ -41,7 +47,7 @@ class ScheduleManager
         $this->reloadTasks();
     }
 
-    public function getSchedule(): Schedule
+    public function getSchedule(): ScheduleInterface
     {
         return $this->schedule;
     }
@@ -75,8 +81,8 @@ class ScheduleManager
             foreach ($businessHours as $hour) {
                 /** @var \DateTimeImmutable $hour */
                 $slot = new Slot(count($eligibleDays), $hour);
-                $hash = $slot->getStart()->format(static::DATE_HOURHASH);
-                $dayHash = $slot->getStart()->format(static::DATE_DAYHASH);
+                $hash = static::getDayHourHash($slot);
+                $dayHash = static::getDayHash($slot);
                 assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
 
                 $slotsMap[$hash] = $slot;
@@ -90,8 +96,9 @@ class ScheduleManager
         }
 
         $this->setSlots(\SplFixedArray::fromArray($eligibleDays));
-        $this->slotsByDayHours = $this->schedule->dayHourSlotMap = $slotsMap;
+        $this->slotsByDayHours = $slotsMap;
         $this->slotsByDay = $byDay;
+
     }
 
     private function setSlots(\SplFixedArray $slots): void
@@ -153,8 +160,12 @@ class ScheduleManager
         // A task is considered to belong to a slot iff its starting
         $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
 
+//        if ($this->isTaskLoaded($task)) {
+//            throw new \LogicException("Task ${task} already loaded into slots");
+//        }
+
         foreach ($period as $hour) {
-            $key = $hour->format(static::DATE_HOURHASH);
+            $key = static::getDayHourHash($hour);
 
             if (!isset($this->slotsByDayHours[$key]))
                 throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
@@ -165,9 +176,9 @@ class ScheduleManager
 
         $consultant = $task->getConsultant();
         if (!isset($this->tasksByConsultant[$consultant]))
-            $this->tasksByConsultant[$consultant] = [$task];
-        else
-            $this->tasksByConsultant[$consultant] = [...$this->tasksByConsultant[$consultant], $task];
+            $this->tasksByConsultant[$consultant] = new \SplObjectStorage();
+
+        $this->tasksByConsultant[$consultant]->attach($task);
 
         if (!isset($this->consultantHours[$consultant])) {
             $this->consultantHours[$consultant] = $task->getHours();
@@ -180,13 +191,6 @@ class ScheduleManager
             } else
                 $this->consultantHoursOnPremises[$consultant] += $task->getHours();
         }
-    }
-
-    public function addTask(Task $task)
-    {
-        $this->schedule->addTask($task);
-        $this->loadTaskIntoSlots($task);
-
     }
 
     /**
@@ -286,37 +290,14 @@ class ScheduleManager
         foreach ($sources as $schedule) {
             foreach ($schedule->getTasks() as $task) {
                 /** @var Task $task */
+
+                // TODO should use $this->addTask()
                 $this->schedule->addTask($task);
 //                $task->setSchedule($this->schedule);
             }
         }
 
         $this->reloadTasks();
-    }
-
-    /**
-     * Returned slots are not necessarily adjacent.
-     * @param Slot $slot
-     * @param bool $sameDay
-     * @param int $min
-     * @param int $max
-     * @return Slot[] Slots sorted by ascending distance
-     */
-    public function getClosestFreeSlots(Slot $slot, bool $sameDay, int $max = INF): array
-    {
-        /** @var Slot[] $slots */
-        $slots = [];
-
-        do {
-            $slots[] = $next = $this->getClosestFreeSlot($slot);
-
-            if ($next === null ||
-                    ($sameDay && end($slots)->getStart()->format(static::DATE_NOTIME) != $next->getStart()->format(static::DATE_NOTIME)))
-                break;
-
-        } while (count($slots) <= $max);
-
-        return $slots;
     }
 
     /**
@@ -341,52 +322,14 @@ class ScheduleManager
         if ($slot->isFree())
             return $slot;
 
-        $direction = match (rand(0, 2)) {
-            0 => 'before',
-            1 => 'after',
-            default => 'both'
-        };
-
-        $slot = $this->getClosestFreeSlot($slot, period: $period, direction: $direction);
+        try {
+            $slot = $this->getClosestFreeSlot($slot, period: $period, direction: match (rand(0, 1)){ 0 => 'before', 1 => 'after' });
+        } catch (NoSlotsAvailableException $e) {
+            $slot = $this->getClosestFreeSlot($slot, period: $period);
+        }
 
 //        assert($slot->isFree() === true, "Slot expected to be free");
         return $slot;
-    }
-
-    /**
-     * @return Slot[]
-     */
-    public function getRandomFreeAdjacentSlots(int $min = 1, int $max = 1): array
-    {
-
-    }
-
-    private function getPeriodStartSlot(Period $period): Slot
-    {
-        $start = $period->includedStart();
-
-        while (!isset($this->slotsByDayHours[$hash = $start->format(static::DATE_HOURHASH)])) {
-            $start = $start->modify('+1 hour');
-
-            if ($period->endsBefore($start))
-                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
-        }
-
-        return $this->slotsByDayHours[$hash];
-    }
-
-    private function getPeriodEndSlot(Period $period): Slot
-    {
-        $end = $period->includedEnd();
-
-        while (!isset($this->slotsByDayHours[$hash = $end->format(static::DATE_HOURHASH)])) {
-            $end = $end->modify('-1 hour');
-
-            if ($period->startsAfter($end))
-                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
-        }
-
-        return $this->slotsByDayHours[$hash];
     }
 
     /**
@@ -411,7 +354,7 @@ class ScheduleManager
             return $slots;
 
         // Get all free slots in the day, then random pick slots until satisfied
-        $hash = $initialSlot->getStart()->format(static::DATE_DAYHASH);
+        $hash = static::getDayHash($initialSlot);
         assert(is_array($this->slotsByDay[$hash]), "Empty slotsByDay for day hash $hash");
 
         // does include initial slot
@@ -443,17 +386,236 @@ class ScheduleManager
         return $slots;
     }
 
-    public function getFreeSlots(): array
+    /**
+     * May return more slots than $preferred, in which case it is up to the caller to chose how many slots to use.
+     *
+     * PROBLEM: period is enforced with hourly precision, that is if the random picked slot is >= $min in a day that has more than 1 adjacent slots free,
+     * the picked slot is returned because it >= $min and belongs to the day.
+     *
+     * @return Slot[] sorted by ascending time
+     * @throws NoSlotsAvailableException
+     */
+    protected function getRandomFreeAdjacentSameDaySlots(int $min = 1, int $preferred = 1, Period $period = null): array
     {
+        if ($min < 1 || $preferred < 1)
+            throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
 
+        if (!$period)
+            $period = $this->schedule->getPeriod();
+
+        assert($this->schedule->getPeriod()->contains($period));
+
+        // Starts
+        $afterIndex = $this->getPeriodStartSlot($period)->getIndex(); // Included
+        $beforeIndex = $this->getPeriodEndSlot($period)->getIndex(); // Included
+
+        /** @var Slot[] $slots */
+        $initialSlot = $this->getRandomFreeSlot($period);
+        if (!$initialSlot)
+            throw new NoSlotsAvailableException("period={$period->asString()}");
+
+        /** @var Slot[] $closestAfter */
+        /** @var Slot[] $closestBefore */
+        $closestAfter = $closestBefore = null;
+        $closestAfterDistance = $closestBeforeDistance = INF;
+
+        // find closest afterwards, including given slot
+        $initialSlot = reset($this->slotsByDay[static::getDayHash($initialSlot)]);
+        $adjacentSlots = [];
+        $dayAdjacentSlots = [];
+        $prevDay = null;
+        for ($idx = $initialSlot->getIndex(); $idx <= $beforeIndex; $idx++) {
+            // First iteration is the initial slot
+            /** @var Slot $slot */
+            $slot = $this->slots[$idx];
+
+            // If new day, then decide whether to return found adjacent slots or keep going
+            if (($dayHash = static::getDayHash($slot)) !== $prevDay) {
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                if (count($dayAdjacentSlots) > 0) {
+                    // Slot blocks will have at least $min elements
+
+                    $largest = null;
+                    foreach ($dayAdjacentSlots as $slots) {
+                        /** @var Slot[] $slots */
+                        if (!isset($largest) || count($slots) > count($largest))
+                            $largest = $slots;
+
+                        if (count($largest) >= $preferred) {
+                            break;
+                        }
+                    }
+
+                    assert(isset($largest));
+                    $closestAfter = $largest;
+                    $closestAfterDistance = $initialSlot->getIndex() - reset($closestAfter)->getIndex();
+                    break;
+                }
+
+                // Resets structures on new day
+                $adjacentSlots = [];
+                $dayAdjacentSlots = [];
+                $prevDay = $dayHash;
+            }
+
+
+            if ($slot->isFree())
+                $adjacentSlots[] = $slot;
+            else {
+                // Store adjacent slot in current day
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                $adjacentSlots = [];
+            }
+        }
+
+        // Find closest earlier, including given slot
+        if (isset($this->slots[$initialSlot->getIndex() - 1]))
+            $initialSlot = $this->slots[$initialSlot->getIndex() - 1]; // Start from last slot of previous day
+
+        $adjacentSlots = [];
+        $dayAdjacentSlots = [];
+        $prevDay = null;
+        for ($idx = $initialSlot->getIndex(); $idx >= $afterIndex; $idx--) {
+            // First iteration is the initial slot
+            /** @var Slot $slot */
+            $slot = $this->slots[$idx];
+
+            // If new day, then decide whether to return found adjacent slots or keep going
+            if (($dayHash = static::getDayHash($slot)) !== $prevDay) {
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                if (count($dayAdjacentSlots) > 0) {
+                    // Slot blocks will have at least $min elements
+
+                    $largest = null;
+                    foreach ($dayAdjacentSlots as $slots) {
+                        /** @var Slot[] $slots */
+                        if (!isset($largest) || count($slots) > count($largest))
+                            $largest = $slots;
+
+                        if (count($largest) >= $preferred) {
+                            break;
+                        }
+                    }
+
+                    assert(isset($largest));
+                    $closestBefore = $largest;
+                    usort($closestBefore, fn($s1, $s2) => $s1->getStart() <=> $s2->getStart());
+                    $closestBeforeDistance = end($closestBefore)->getIndex() - $initialSlot->getIndex();
+                    break;
+                }
+
+                // Resets structures on new day
+                $adjacentSlots = [];
+                $dayAdjacentSlots = [];
+                $prevDay = $dayHash;
+            }
+
+            if ($slot->isFree())
+                $adjacentSlots[] = $slot;
+            else {
+                // Store adjacent slot in current day
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                $adjacentSlots = [];
+            }
+        }
+
+        if (!$closestAfter && !$closestBefore)
+            throw new NoSlotsAvailableException("No free slots available in period {$period->asString()}");
+
+        // Both found and equally distant
+        if ($closestBeforeDistance === $closestAfterDistance && $closestBefore && $closestAfter)
+            return [$closestBefore,$closestAfter][rand(0, 1)];
+
+        if ($closestBefore && $closestBeforeDistance < $closestAfterDistance) {
+            // N.B. ($closestBackwards !== null && $closestForward === null) => $closestBackwardsDistance < $closestForwardDistance(=INF)
+            return $closestBefore;
+        }
+
+        if ($closestAfter && $closestAfterDistance < $closestBeforeDistance) {
+            // N.B. ($closestForward !== null && $closestBackwards === null) => $closestForwardDistance < $closestBackwardsDistance(=INF)
+            return $closestAfter;
+        }
+
+        throw new \LogicException('This should not be executed');
+    }
+
+    //region Allocation API
+
+    public function allocateAdjacentSameDaySlots(Task $task, int $min = 1, int $preferred = 1, Period $period = null): int
+    {
+        if ($min < 1 || $preferred < 1 || $preferred < $min)
+            throw new \InvalidArgumentException(__METHOD__ ." $min < 1 || $preferred < 1 || $preferred < $min");
+
+        $slots = $this->getRandomFreeAdjacentSameDaySlots($min, $preferred, $period);
+
+        if (count($slots) < $min)
+            throw new NoSlotsAvailableException("Period={$period->asString()} min={$min} preferred={$preferred}");
+
+        $end = $slots[0]->getEnd();
+        $allocated = 1;
+        while ($allocated < $preferred && $allocated < count($slots))
+        {
+            $end = $slots[$allocated++]->getEnd();
+        }
+
+        $task->setStart($slots[0]->getStart());
+        $task->setEnd($end);
+
+        $this->addTask($task);
+
+        assert($task->getHours() === $allocated);
+        assert($allocated >= $min);
+        assert($allocated <= $preferred);
+
+        return $allocated;
+    }
+
+    //endregion Allocation API
+
+    private function getPeriodStartSlot(Period $period): Slot
+    {
+        $start = $period->includedStart();
+
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($start)])) {
+            $start = $start->modify('+1 hour');
+
+            if ($period->endsBefore($start))
+                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
+        }
+
+        return $this->slotsByDayHours[$hash];
+    }
+
+    private function getPeriodEndSlot(Period $period): Slot
+    {
+        $end = $period->includedEnd();
+
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($end)])) {
+            $end = $end->modify('-1 hour');
+
+            if ($period->startsAfter($end))
+                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
+        }
+
+        return $this->slotsByDayHours[$hash];
     }
 
     /**
      * Closest does not mean adjacent or in the same day.
+     * @throws NoSlotsAvailableException
      */
-    public function getClosestFreeSlot(Slot $slot, Period $period = null, string $direction = 'both'): ?Slot
+    protected function getClosestFreeSlot(Slot $slot, Period $period = null, string $direction = 'both'): Slot
     {
         if (!$period) $period = $this->schedule->getPeriod();
+        assert($this->schedule->getPeriod()->contains($period));
         assert($period->contains($slot->getPeriod()));
 
         $slotIndex = $slot->getIndex();
@@ -498,8 +660,9 @@ class ScheduleManager
         }
 
         // None found, out of free slots
-        if (!$closestBefore && !$closestAfter)
-            return null;
+        if (!$closestBefore && !$closestAfter) {
+            throw new NoSlotsAvailableException("No free slots available on schedule {$this->schedule} period={$period->asString()}". $this->getStats());
+        }
 
         // Both found and equally distant
         if ($closestBeforeDistance === $closestAfterDistance && $closestBefore && $closestAfter)
@@ -515,7 +678,7 @@ class ScheduleManager
             return $closestAfter;
         }
 
-        assert(false, 'This should not be executed');
+        throw new \LogicException('This should not be executed');
     }
 
 
@@ -528,7 +691,7 @@ class ScheduleManager
         $prevSlotDayHash = null;
         foreach ($this->slots as $slot) {
             /** @var Slot $slot */
-            $dayHash = $slot->getStart()->format(static::DATE_DAYHASH);
+            $dayHash = static::getDayHash($slot);
 
             // Skip initial slot
             if ($prevSlot && $prevSlotDayHash) {
@@ -570,5 +733,268 @@ class ScheduleManager
 
         // TODO inefficient but works
         $this->reloadTasks();
+    }
+
+    /**
+     * - $this->slots are implicitly ordered by ascending time
+     */
+    public function consolidateNonOverlappingTasksDaily(): void
+    {
+        $daySlots = []; // slots by day
+        $dayTasks = [];
+        // Slots ordered by ascending time
+
+        // Group tasks by day
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            assert(count($slot->getTasks()) < 2, "Slot {$slot} contains overlapping tasks");
+
+            $dayHash = static::getDayHash($slot);
+            if (!isset($dayTasks[$dayHash])) {
+                $dayTasks[$dayHash] = [];
+            }
+//            if (!isset($daySlots[$dayHash])) {
+//                $daySlots[$dayHash] = [];
+//            }
+//
+//            $daySlots[$dayHash][] = $slot;
+
+            foreach ($slot->getTasks() as $task) {
+                /** @var Task $task */
+                if (!in_array($task, $dayTasks[$dayHash])) {
+                    $dayTasks[$dayHash][] = $task;
+                }
+            }
+        }
+
+        foreach ($dayTasks as $dayHash => &$tasks) {
+            /** @var Task[] $tasks */
+            if (count($tasks) < 2) continue;
+
+            $slots = $this->slotsByDay[$dayHash];
+
+            // Ensure tasks are ordered by ascending start
+            usort($tasks, fn(/** @var Task $t1 */ $t1, /** @var Task $t2 */ $t2) => $t1->getStart() <=> $t2->getStart());
+
+            $dayTasksHoursTotal = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + (int) $t->getHours(), 0);
+            $dayTasksHoursOnPremises = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + ($t->getHours() * $t->isOnPremises() ? 1 : 0), 0);
+            $dayAllocatedSlots = count(array_filter($slots, fn($s) => $s->isAllocated()));
+            assert($dayTasksHoursTotal === $dayAllocatedSlots);
+
+//            echo sprintf("\nDay {$dayHash} hours_total={$dayTasksHoursTotal} hours_on_premises={$dayTasksHoursOnPremises}");
+
+            $reallocatedTasks = []; // tasks removed
+
+            foreach ($tasks as $i => $task) {
+                if (in_array($task, $reallocatedTasks)) {
+                    continue;
+                }
+
+                $matches = array_filter($tasks, fn(/** @var Task $t */ $t) =>
+                    $t !== $task
+                    && $t->sameActivityOf($task)
+//                    && $t->getStart() > $task->getStart() // Prevents matching already iterated on tasks
+                );
+                if (empty($matches)) continue;
+
+                $matchesHours = array_reduce($matches, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
+                assert($matchesHours > 0, "Task hours $matchesHours > 0");
+
+                // Expands the task's end to include matched tasks hours.
+                // This does not reflect the exact start/end of the task as these are reassigned
+                // when the task is spread across daily slots (see below)
+                $task->setEnd(\DateTime::createFromInterface($task->getEnd())->add(new \DateInterval("PT{$matchesHours}H")));
+
+                array_push($reallocatedTasks, ...$matches);
+            }
+
+            if (empty($reallocatedTasks))
+                continue; // no task has been merged.
+
+            // Remove merged tasks.
+            foreach ($tasks as $i => $task)
+                if (in_array($task, $reallocatedTasks)) {
+                    unset($tasks[$i]);
+                    $this->removeTask($task); // TODO entityManager::delete() somehow
+
+//                    echo "\nRemoved task {$task}";
+                }
+
+            // Empty all slots
+            foreach ($slots as $slot) {
+                /** @var Slot $slot */
+                $slot->empty();
+            }
+
+            $dayTasksHoursTotal_after = array_reduce($tasks, fn($sum, $t) => ($sum + (int) $t->getHours()), 0);
+            assert($dayTasksHoursTotal === $dayTasksHoursTotal_after);
+
+            // Reallocate tasks
+//            $latestSlotIndex = rand(0, count($slots) - $dayTasksHoursTotal);
+            $latestSlotIndex = 0;
+            foreach ($tasks as $task) {
+                /** @var Task $task */
+                assert($latestSlotIndex < count($slots));
+
+                $hours = $task->getHours();
+
+                $assignedSlots = array_slice($slots, $latestSlotIndex, $hours);
+                $task->setEnd(end($assignedSlots)->getEnd());
+                $task->setStart(reset($assignedSlots)->getStart());
+
+                foreach ($assignedSlots as $slot) {
+                    /** @var Slot $slot */
+                    $slot->addTask($task);
+                    $latestSlotIndex++;
+                }
+            }
+
+            $dayTasksHoursTotal_after = array_reduce($tasks, fn($sum, $t) => $sum + (int) $t->getHours(), 0);
+            $dayTasksHoursOnPremises_after = array_reduce($tasks, fn($sum, /** @var Task $t */ $t) => $sum + ($t->getHours() * $t->isOnPremises() ? 1 : 0), 0);
+            $dayAllocatedSlots_after = count(array_filter($slots, fn($s) => $s->isAllocated()));
+            if ($dayTasksHoursTotal !== $dayTasksHoursTotal_after) {
+                assert($dayTasksHoursTotal === $dayTasksHoursTotal_after);
+            }
+            if ($dayTasksHoursOnPremises ==! $dayTasksHoursOnPremises_after) {
+                assert($dayTasksHoursOnPremises === $dayTasksHoursOnPremises_after);
+            }
+            if ($dayAllocatedSlots !== $dayAllocatedSlots_after) {
+                assert($dayAllocatedSlots === $dayAllocatedSlots_after);
+            }
+        }
+    }
+
+    public function countSlotsAllocatedToContractedService(ContractedService $cs): int
+    {
+        $count = 0;
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocatedToContractedService($cs))
+                $count++;
+        }
+
+        return $count;
+    }
+
+    public function countOnPremisesSlotsAllocatedToContractedService(ContractedService $cs): int
+    {
+        $count = 0;
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocatedOnPremisesToContractedService($cs))
+                $count++;
+        }
+
+        return $count;
+    }
+
+    public function assertZeroOrOneTaskPerSlot(): void
+    {
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if (count($slot->getTasks()) > 1)
+                throw new \LogicException(sprintf("Failed to assert that slot {$slot} contains at most one task: count=%d", count($slot->getTasks())));
+        }
+    }
+
+    public function removeTask(Task $task): static
+    {
+        $this->schedule->removeTask($task);
+
+        // TODO update slots etc
+        return $this;
+    }
+
+    public function addTask(Task $task): static
+    {
+        if (!$this->containsTask($task)) {
+            $this->schedule->addTask($task);
+            $this->loadTaskIntoSlots($task);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Shadows the underlying collection to prevent modification outside of manager methods.
+     *
+     * @return Collection
+     */
+    public function getTasks(): Collection
+    {
+        return new ArrayCollection($this->schedule->getTasks()->toArray());
+    }
+
+    public function getFrom(): \DateTimeInterface
+    {
+        return $this->schedule->getFrom();
+    }
+
+    public function getTo(): \DateTimeInterface
+    {
+        return $this->schedule->getTo();
+    }
+
+    public function containsTask(Task $task): bool
+    {
+        $contains = $this->schedule->getTasks()->contains($task);
+
+        // Task must be included in tasksByConsultant
+        assert( !$contains || $this->tasksByConsultant[$task->getConsultant()]->contains($task), "tasksByConsultant out of sync with underlying tasks collection: missing task {$task}");
+        // No slot contains the task
+        assert(!$contains || empty(array_filter($this->slots->toArray(), fn($slot) => $slot->contains($task))));
+
+        return $contains;
+    }
+
+    /**
+     * Checks whether the task has been properly loaded into the manager's cache structures.
+     *
+     * TODO: this method has a high performance impact when run for every task.. should be avoided and other alternatives evaluated (e.g. test) for consistency checks.
+     *
+     * @param Task $task
+     * @return bool
+     */
+    private function isTaskLoaded(Task $task): bool
+    {
+        assert($this->schedule->getTasks()->contains($task));
+
+        // Cheaper
+        $loaded = !empty(array_filter(
+            $this->slots->toArray(),
+            fn($slot) => $slot->containsTask($task))
+        );
+
+        assert(!$loaded || in_array($task, $this->tasksByConsultant[$task->getConsultant()], true));
+        assert(!$loaded || !empty(array_filter(
+            $this->slotsByDay[static::getDayHash($task)],
+            fn($slot) => $slot->containsTask($task)))
+        );
+
+        return $loaded;
+    }
+
+    public static function getDayHash(mixed $o): int
+    {
+        if ($o instanceof Slot)
+            return (int)$o->getStart()->format(static::DATE_DAYHASH);
+        if ($o instanceof Task)
+            return (int)$o->getStart()->format(static::DATE_DAYHASH);
+        if ($o instanceof \DateTimeInterface)
+            return (int)$o->format(static::DATE_DAYHASH);
+
+        throw new \InvalidArgumentException("Object of type ". $o::class ."not supported");
+    }
+
+    public static function getDayHourHash(mixed $o): int
+    {
+        if ($o instanceof Slot)
+            return (int)$o->getStart()->format(static::DATE_HOURHASH);
+        if ($o instanceof Task)
+            return (int)$o->getStart()->format(static::DATE_HOURHASH);
+        if ($o instanceof \DateTimeInterface)
+            return (int)$o->format(static::DATE_HOURHASH);
+
+        throw new \InvalidArgumentException("Object of type ".$o::class."not supported");
     }
 }

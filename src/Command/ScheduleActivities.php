@@ -67,14 +67,15 @@ class ScheduleActivities extends Command
             /** @var Consultant $consultant */
             $this->scheduleGenerator->setOutput($this->output);
             $consultantSchedule = $this->scheduleGenerator->generateSchedule($consultant, $this->from, $this->to);
+            $consultantScheduleManager = $this->scheduleManagerFactory->createScheduleManager($consultantSchedule);
 
 //            $this->entityManager->persist($consultantSchedule);
 //            $this->entityManager->flush();
 //            return Command::SUCCESS;
 
-            $manager->merge($consultantSchedule);
+            $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantScheduleManager->getStats()));
 
-            $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantSchedule->getStats()));
+            $manager->merge($consultantSchedule);
         }
 
         foreach ($schedule->getTasks() as $task) {

@@ -30,7 +30,7 @@ class ScheduleManagerFactory
         // the schedule lifetime (no setters).
 
         if (!isset($this->cache[$schedule])) {
-            $this->cache->attach($schedule, new ScheduleManager($schedule, $this->entityManager));
+            $this->cache->attach($schedule, new ScheduleManager($schedule /*, $this->entityManager */));
         } else {
             $this->cache[$schedule]->reloadTasks();
         }

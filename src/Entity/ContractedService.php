@@ -27,7 +27,7 @@ class ContractedService implements \Stringable
     private int $id;
 
     /**
-     * @ORM\ManyToOne(targetEntity=Contract::class, inversedBy="services", cascade={"persist"})
+     * @ORM\ManyToOne(targetEntity=Contract::class, inversedBy="contractedServices", cascade={"persist"})
      * @ORM\JoinColumn(nullable=false)
      */
     private Contract $contract;
