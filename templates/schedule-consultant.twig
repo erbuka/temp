@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="it-IT">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Programmazione consulenze in presenza</title>
+
+        <link rel="stylesheet" href="{{ asset(base ~ '/assets/styles/schedule.css') }}">
+
+        <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>
+    </head>
+    <body>
+        <header id="header">
+            <h1>Domanda PSR 2014-2020 - Misura 2.1 &ndash; “Sostegno ad avvalersi di servizi di consulenza”</h1>
+
+            <h2>{{ consultant.name |upper }}</h2>
+
+{#            <h3>Programmazione preventiva ore in presenza</h3>#}
+        </header>
+
+        <main id="content">
+            <article class="consultant">
+                <header>
+                    <h1>
+                        <span class="name">{{ consultant.name | upper }}</span>
+                        <span class="job">{{ consultant.jobTitle }}</span>
+                        <span class="hours">{{ hours_on_premises }} ore in presenza</span>
+                    </h1>
+                </header>
+
+                <div class="tasks">
+                    <div class="headings">
+                        <span>data</span>
+                        <span>orario</span>
+                        <span>destinatario</span>
+                        <span>luogo</span>
+                    </div>
+
+                    {% for task in tasks %}
+                    <div class="task">
+                        <span>{{ task.date }}</span>
+                        <span>{{ task.start }} - {{ task.end }}</span>
+                        <span>{{ task.recipient }}</span>
+                        <span>c/o U.T.E. azienda</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </article>
+        </main>
+    </body>
+</html>

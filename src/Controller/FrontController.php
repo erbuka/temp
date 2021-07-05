@@ -117,9 +117,56 @@ class FrontController extends AbstractController
             ];
         }
 
-        return $this->render('schedule.twig', [
+        return $this->render('schedule-all.twig', [
             'base' => static::APP_DIRECTORY,
             'consultants' => $consultants
+        ]);
+    }
+
+    #[Route('/schedules-list')]
+    public function generateSchedulesList(EntityManagerInterface $entityManager): Response
+    {
+        $schedules = $entityManager
+            ->createQuery('SELECT s FROM '. Schedule::class .' s ORDER BY s.consultant ASC')
+            ->getResult();
+
+        return $this->render('schedules-list.twig', [
+            'base' => static::APP_DIRECTORY,
+            'schedules' => $schedules
+        ]);
+    }
+
+    #[Route('/schedules/{scheduleId}')]
+    public function generateSchedule(int $scheduleId, EntityManagerInterface $entityManager, ScheduleManagerFactory $scheduleManagerFactory): Response
+    {
+        $schedule = $entityManager->getRepository(Schedule::class)->find($scheduleId);
+        if (!$schedule)
+            throw $this->createNotFoundException("Schedule {$scheduleId} not found");
+
+        $consultant = $schedule->getConsultant();
+        $manager = $scheduleManagerFactory->createScheduleManager($schedule);
+
+        $tasks = [];
+        foreach ($schedule->getTasks() as $task) {
+            /** @var Task $task */
+            if (!$task->isOnPremises())
+                continue;
+
+            $tasks[] = [
+                'date' => $task->getStart()->format('Y-m-d'),
+                'start' => $task->getStart()->format('H:i'),
+                'end' => $task->getEnd()->format('H:i'),
+                'recipient' => $task->getRecipient()->getName(),
+                'location' => $task->getRecipient()->getHeadquarters(),
+            ];
+        }
+
+        return $this->render('schedule-consultant.twig', [
+            'base' => static::APP_DIRECTORY,
+            'consultant' => $schedule->getConsultant(),
+            'tasks' => $tasks,
+            'hours' => $manager->getConsultantHours($consultant),
+            'hours_on_premises' => $manager->getConsultantHoursOnPremises($consultant),
         ]);
     }
 

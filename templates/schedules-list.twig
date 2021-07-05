@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="it-IT">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Elenco Programmazioni</title>
+    </head>
+    <body>
+        <main id="content">
+            <ul>
+            {% for schedule in schedules %}
+                <li><a href="/schedules/{{ schedule.id }}">{{ schedule.consultant.name }}</a></li>
+            {% endfor %}
+            </ul>
+        </main>
+    </body>
+</html>
