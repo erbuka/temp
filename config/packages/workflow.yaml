@@ -1,0 +1,22 @@
+framework:
+    workflows:
+        task:
+            type: 'workflow'
+            marking_store:
+                type: 'method'
+                property: 'state'
+            supports:
+                - App\Entity\Task
+            initial_marking: start
+            places:
+                - start
+                - scheduled
+                - executed
+                - settled
+            transitions:
+                schedule:
+                    from: [start]
+                    to: [scheduled, executed]
+                settle:
+                    from: [executed]
+                    to: settled

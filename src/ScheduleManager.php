@@ -4,9 +4,12 @@
 namespace App;
 
 
+use App\Entity\AddTaskCommand;
 use App\Entity\Consultant;
 use App\Entity\ContractedService;
+use App\Entity\RemoveTaskCommand;
 use App\Entity\Schedule;
+use App\Entity\ScheduleChangeset;
 use App\Entity\Task;
 use App\Repository\ScheduleRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -16,6 +19,8 @@ use Spatie\Period\Period;
 use Spatie\Period\Precision;
 use App\Validator\Constraints as AppAssert;
 use Symfony\Component\Validator\Constraints as Assert;
+use Symfony\Component\Validator\Context\ExecutionContextInterface;
+use Symfony\Component\Workflow\WorkflowInterface;
 
 class ScheduleManager implements ScheduleInterface
 {
@@ -23,33 +28,51 @@ class ScheduleManager implements ScheduleInterface
     const DATE_HOURHASH = 'YmdH';
     const DATE_DAYHASH = 'Ymd';
 
+    const VIOLATION_MULTIPLE_CONSULTANTS = 'Consultant schedule contains tasks of multiple consultants: {{ consultant }} !== {{ consultant_extraneous }}';
+    const VIOLATION_DISCONTINUOUS_TASK = "Task {{ task }} of contracted service {{ contracted_service }} is split across discontinuous slots on day {{ day }}";
+    const VIOLATION_TASKS_OVERLAPPING = "Task {{ task }} overlaps with task {{ task_overlapped }}";
+
     #[Assert\Valid]
     private Schedule $schedule;
+    protected ?WorkflowInterface $taskWorkflow;
+    private ScheduleChangeset $changeset;
+    private Period $period;
 
+    //region Indices
     private \SplFixedArray $slots; // NOTA BENE: this is shared (by ref) with Schedule.slots
     /** @var array<string, Slot> e.g. '2021020318' => Slot */
     private array $slotsByDayHours;
     /** @var array<string, Slot[]> e.g. '20210203' => Slot */
     private array $slotsByDay;
-    private Period $period;
+    /** @var \SplObjectStorage<Consultant, \SplObjectStorage>  */
     private \SplObjectStorage $tasksByConsultant;
+    /** @var \SplObjectStorage<Consultant, int> **TOTAL** consultant hours (simplifies testing) */
     private \SplObjectStorage $consultantHours;
+    /** @var \SplObjectStorage<Consultant, int>  */
     private \SplObjectStorage $consultantHoursOnPremises;
+    //endregion Indices
 
-    public function __construct(Schedule $schedule)
+    public function __construct(Schedule $schedule, ?WorkflowInterface $taskWorkflow = null)
     {
         $this->schedule = $schedule;
-        $schedule->setManager($this);
+        $this->taskWorkflow = $taskWorkflow;
+//        $schedule->setManager($this);
 
         $this->period = Period::make($schedule->getFrom(), $schedule->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END());
 
         $this->generateSlots();
         $this->reloadTasks();
+        $this->initializeChangeset();
     }
 
     public function getSchedule(): ScheduleInterface
     {
         return $this->schedule;
+    }
+
+    private function initializeChangeset(): void
+    {
+        $this->changeset = new ScheduleChangeset($this->schedule);
     }
 
     private function generateSlots()
@@ -152,6 +175,18 @@ class ScheduleManager implements ScheduleInterface
     }
 
     /**
+     * @param Consultant $consultant
+     * @return Task[]
+     */
+    public function getConsultantTasks(Consultant $consultant): array
+    {
+        if (!$this->tasksByConsultant->contains($consultant))
+            return [];
+
+        return iterator_to_array($this->tasksByConsultant[$consultant]);
+    }
+
+    /**
      * TODO remove task from other slots, requires taskToSlotsMap
      * @param Task $task
      */
@@ -164,6 +199,7 @@ class ScheduleManager implements ScheduleInterface
 //            throw new \LogicException("Task ${task} already loaded into slots");
 //        }
 
+        $allocatedSlots = new \SplObjectStorage();
         foreach ($period as $hour) {
             $key = static::getDayHourHash($hour);
 
@@ -171,26 +207,16 @@ class ScheduleManager implements ScheduleInterface
                 throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
 
             assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
-            $this->slotsByDayHours[$key]->addTask($task);
+
+            $slot = $this->slotsByDayHours[$key];
+            $slot->addTask($task);
+            $allocatedSlots->attach($slot);
         }
 
-        $consultant = $task->getConsultant();
-        if (!isset($this->tasksByConsultant[$consultant]))
-            $this->tasksByConsultant[$consultant] = new \SplObjectStorage();
+        assert(count($allocatedSlots) === $task->getHours());
+        assert($period->length() === $task->getHours());
 
-        $this->tasksByConsultant[$consultant]->attach($task);
-
-        if (!isset($this->consultantHours[$consultant])) {
-            $this->consultantHours[$consultant] = $task->getHours();
-        } else
-            $this->consultantHours[$consultant] += $task->getHours();
-
-        if ($task->isOnPremises()) {
-            if (!isset($this->consultantHoursOnPremises[$consultant])) {
-                $this->consultantHoursOnPremises[$consultant] = $task->getHours();
-            } else
-                $this->consultantHoursOnPremises[$consultant] += $task->getHours();
-        }
+        $this->addTaskIntoIndices($task);
     }
 
     /**
@@ -285,7 +311,7 @@ class ScheduleManager implements ScheduleInterface
      * N.B. I assume each task is uniquely identified by (contracted service, on-premises)
      * N.B. 2: assert tasks do not overlap
      */
-    public function merge(Schedule ...$sources)
+    public function merge(ScheduleInterface ...$sources)
     {
         foreach ($sources as $schedule) {
             foreach ($schedule->getTasks() as $task) {
@@ -335,7 +361,7 @@ class ScheduleManager implements ScheduleInterface
     /**
      * @return Slot[]
      */
-    public function getRandomFreeSlotsSameDay(int $min = 1, int $preferred = 1, Period $period = null): array
+    protected function getRandomFreeSlotsSameDay(int $min = 1, int $preferred = 1, Period $period = null): array
     {
         if ($min < 1 || $preferred < 1)
             throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
@@ -569,6 +595,10 @@ class ScheduleManager implements ScheduleInterface
         $task->setStart($slots[0]->getStart());
         $task->setEnd($end);
 
+        if ($this->taskWorkflow) {
+            $this->taskWorkflow->getMarking($task); // Sets initial marking + triggers workflow events
+        }
+
         $this->addTask($task);
 
         assert($task->getHours() === $allocated);
@@ -681,7 +711,6 @@ class ScheduleManager implements ScheduleInterface
         throw new \LogicException('This should not be executed');
     }
 
-
     /**
      * Assumes slots ordered by time.
      */
@@ -720,7 +749,7 @@ class ScheduleManager implements ScheduleInterface
 
                             // Remove the adjacent task if it has been completely merged.
                             if ($task->getStart()->diff($task->getEnd(), true)->h === 0) {
-                                $this->schedule->removeTask($task);
+                                $this->removeTask($task);
                             }
                         }
                     }
@@ -888,35 +917,47 @@ class ScheduleManager implements ScheduleInterface
         return $count;
     }
 
-    public function assertZeroOrOneTaskPerSlot(): void
-    {
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            if (count($slot->getTasks()) > 1)
-                throw new \LogicException(sprintf("Failed to assert that slot {$slot} contains at most one task: count=%d", count($slot->getTasks())));
-        }
-    }
 
-    public function removeTask(Task $task): static
-    {
-        $this->schedule->removeTask($task);
-
-        // TODO update slots etc
-        return $this;
-    }
+    //region Commands
 
     public function addTask(Task $task): static
     {
         if (!$this->containsTask($task)) {
-            $this->schedule->addTask($task);
+            $command = new AddTaskCommand($this->schedule, $task);
+
+            $command->execute();
+            $this->changeset->addCommand($command);
+
             $this->loadTaskIntoSlots($task);
         }
 
         return $this;
     }
 
+    public function removeTask(Task $task): static
+    {
+        if ($this->containsTask($task)) {
+            $cmd = new RemoveTaskCommand($this->schedule, $task);
+
+            $cmd->execute();
+            $this->changeset->addCommand($cmd);
+
+            $this->removeTaskFromIndices($task);
+        }
+
+        return $this;
+    }
+
+    public function moveTask(Task $task): static
+    {
+
+    }
+
+    //endregion Commands
+
     /**
      * Shadows the underlying collection to prevent modification outside of manager methods.
+     * But that's petty because one could always change task start/end time.
      *
      * @return Collection
      */
@@ -940,9 +981,11 @@ class ScheduleManager implements ScheduleInterface
         $contains = $this->schedule->getTasks()->contains($task);
 
         // Task must be included in tasksByConsultant
-        assert( !$contains || $this->tasksByConsultant[$task->getConsultant()]->contains($task), "tasksByConsultant out of sync with underlying tasks collection: missing task {$task}");
-        // No slot contains the task
-        assert(!$contains || empty(array_filter($this->slots->toArray(), fn($slot) => $slot->contains($task))));
+        // problem: consolidateAdjacentSameDayTasks removes the task from all slots before invoking delete
+//        if ($contains) {
+//            assert($this->tasksByConsultant[$task->getConsultant()]->contains($task), "tasksByConsultant out of sync with underlying tasks collection: missing task {$task}");
+//            assert(!empty($slots = array_filter($this->slots->toArray(), fn(/** @var Slot $slot */ $slot) => $slot->containsTask($task))), "::slots out of sync with schedule's tasks collection");
+//        }
 
         return $contains;
     }
@@ -997,4 +1040,188 @@ class ScheduleManager implements ScheduleInterface
 
         throw new \InvalidArgumentException("Object of type ".$o::class."not supported");
     }
+
+    public function getScheduleChangeset(): ScheduleChangeset
+    {
+        return $this->changeset;
+    }
+
+    //region Indices operations
+    protected function removeTaskFromIndices(Task $task)
+    {
+        $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
+        $consultant = $task->getConsultant();
+        $removed = false;
+
+        // Removes from slots. (optimized: if task is erroneously present in other slots, it does not get eliminated)
+        foreach ($period as $hour) {
+            $key = static::getDayHourHash($hour);
+            if (!isset($this->slotsByDayHours[$key]))
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+
+            $slot = $this->slotsByDayHours[$key];
+            $slot->removeTask($task);
+        }
+
+        // tasksByConsultant
+        /** @var \SplObjectStorage $tasksByConsultant */
+        $tasksByConsultant = $this->tasksByConsultant[$consultant];
+        if ($tasksByConsultant->contains($task)) {
+            $tasksByConsultant->detach($task);
+            $removed = true;
+        }
+
+        // Update hours
+        if ($removed) {
+            $this->consultantHours[$consultant] -= $task->getHours();
+
+            if ($task->isOnPremises())
+                $this->consultantHoursOnPremises[$consultant] -= $task->getHours();
+        }
+    }
+
+    protected function addTaskIntoIndices(Task $task)
+    {
+        $consultant = $task->getConsultant();
+
+        if (!isset($this->tasksByConsultant[$consultant]))
+            $this->tasksByConsultant[$consultant] = new \SplObjectStorage();
+        $this->tasksByConsultant[$consultant]->attach($task);
+
+        if (!isset($this->consultantHours[$consultant])) {
+            $this->consultantHours[$consultant] = $task->getHours();
+        } else
+            $this->consultantHours[$consultant] += $task->getHours();
+
+        if ($task->isOnPremises()) {
+            if (!isset($this->consultantHoursOnPremises[$consultant])) {
+                $this->consultantHoursOnPremises[$consultant] = $task->getHours();
+            } else
+                $this->consultantHoursOnPremises[$consultant] += $task->getHours();
+        }
+    }
+
+    //endregion Indices operations
+
+    //region Validation callbacks
+
+    /**
+     * These validation callbacks are implicitly applied only for individual consultant schedules.
+     * @param ExecutionContextInterface $context
+     * @return bool
+     */
+    #[Assert\Callback(groups: ['consultant'])]
+    public function validateTasksSameConsultant(ExecutionContextInterface $context): void
+    {
+        /** @var Consultant $consultant */
+        $consultant = null;
+
+        foreach ($this->schedule->getTasks() as $task) {
+            /** @var Task $task */
+            if (!isset($consultant)) {
+                $consultant = $task->getConsultant();
+                continue;
+            }
+
+            if ($task->getConsultant() !== $consultant) {
+                $context->buildViolation(static::VIOLATION_MULTIPLE_CONSULTANTS)
+                    ->setParameter('{{ consultant }}', $consultant->getName())
+                    ->setParameter('{{ consultant_extraneous }}', $task->getConsultant()->getName())
+                    ->addViolation();
+            }
+        }
+    }
+
+    /**
+     * Detects whether a task is spread across non-adjacent slots in the same day.
+     *
+     * Notice that a task is (consultant, recipient, service, on/off-premises).
+     */
+    #[Assert\Callback(groups: ['generation'])]
+    public function detectDiscontinuousTasks(ExecutionContextInterface $context)
+    {
+        $dayTasks = [];
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            $hash = $slot->getStart()->format(ScheduleManager::DATE_NOTIME);
+            if (!isset($dayTasks[$hash]))
+                $dayTasks[$hash] = [];
+
+            foreach ($slot->getTasks() as $task) {
+                if (!in_array($task, $dayTasks[$hash])) {
+                    $dayTasks[$hash][] = $task;
+                }
+            }
+        }
+
+        foreach ($dayTasks as $day => $tasks) {
+            /** @var Task[] $tasks */
+
+            foreach ($tasks as $task) {
+                /** @var Task $task */
+                $matches = array_filter($tasks,
+                    fn ($t) => $t !== $task
+                        && $t->getContractedService() === $task->getContractedService()
+                        && $t->isOnPremises() === $task->isOnPremises()
+                );
+
+                foreach ($matches as $m) {
+                    $context->buildViolation(static::VIOLATION_DISCONTINUOUS_TASK)
+                        ->setParameter('{{ task }}', (string) $m)
+                        ->setParameter('{{ day }}', $day)
+                        ->setParameter('{{ contracted_service }}', $task->getContractedService())
+                        ->addViolation();
+                }
+            }
+        }
+    }
+
+    /**
+     * Should use only tasks.
+     * Should not depend on EntityManager or other services. If this is needed, refactor to external constraint.
+     * Advantage of using callbacks: access to private members.
+     *
+     * Assumes slots ordered by time ASC.
+     *
+     * @param ExecutionContextInterface $context
+     */
+    #[Assert\Callback(groups: ['consultant'])]
+    public function detectOverlappingTasks(ExecutionContextInterface $context)
+    {
+        $taskOverlaps = new \SplObjectStorage(); // <Task, Task[]>
+
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            $tasks = $slot->getTasks(); // returns a copy of type array
+            usort($tasks, fn(/** @var Task $t1 */ $t1, /** @var Task $t2 */ $t2) => $t1->getStart() <=> $t2->getStart());
+
+            if (count($tasks) > 1) {
+                $overlapped = array_shift($tasks);
+
+                if (!isset($taskOverlaps[$overlapped]))
+                    $taskOverlaps[$overlapped] = [];
+
+                foreach ($tasks as $task) {
+                    if (!in_array($task, $taskOverlaps[$overlapped]))
+                        $taskOverlaps[$overlapped] = [...$taskOverlaps[$overlapped], $task];
+                }
+            }
+        }
+
+        foreach ($taskOverlaps as $overlapped) {
+            /** @var Task $overlapped */
+            $overlaps = $taskOverlaps[$overlapped];
+
+            foreach ($overlaps as $task) {
+                $context->buildViolation(static::VIOLATION_TASKS_OVERLAPPING)
+                    ->setParameter('{{ task }}', $task)
+                    ->setParameter('{{ task_overlapped }}', $overlapped)
+//                        ->setInvalidValue($task)
+//                        ->atPath("slot({$slot->getIndex()}).task({$task})")
+                    ->addViolation();
+            }
+        }
+    }
+
+    //endregion Validation callbacks
 }

@@ -29,5 +29,15 @@ trait DoctrineTrait
         static::getManager()->flush();
     }
 
+    protected static function remove(object $object): void
+    {
+        static::getManager()->remove($object);
+    }
+
+    protected static function contains(object $object): bool
+    {
+        return static::getManager()->contains($object);
+    }
+
     protected abstract static function getContainer(): ContainerInterface;
 }

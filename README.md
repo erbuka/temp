@@ -40,3 +40,9 @@ must be performed. When entities are created/updated programmatically, the Valid
 - `./composer.phar dump-autoload --no-dev --classmap-authoritative`
 - `./composer.phar dump-env prod`. Note that real environment variables always win over ones declared in .env files.
 - `./cachetool.phar opcache:reset`
+
+
+## Entity-Relationship Model
+
+### Task
+ - tasks are never reassigned between schedules?

@@ -15,13 +15,18 @@ use App\ScheduleManager;
 use App\ScheduleManagerFactory;
 use Symfony\Component\Validator\Constraints\NotNullValidator;
 use Symfony\Component\Validator\Test\ConstraintValidatorTestCase;
+use Symfony\Component\Workflow\DefinitionBuilder;
+use Symfony\Component\Workflow\Marking;
+use Symfony\Component\Workflow\WorkflowInterface;
 
 class ScheduleCallbacksTest extends ConstraintValidatorTestCase
 {
     /**
      * @dataProvider scheduleAndContractedServiceProvider
      */
-    public function testContractedServiceExcessHoursPerDay(Schedule $schedule, ContractedService $cs) {
+    public function testContractedServiceExcessHoursPerDay(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        $this->markTestSkipped('Contracted service daily hours validation deprecated');
+
         $from = $schedule->getFrom();
         $manager = new ScheduleManager($schedule);
 
@@ -55,9 +60,8 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
     /**
      * @dataProvider scheduleAndContractedServiceProvider
      */
-    public function testOverlappingTasksViolation(Schedule $schedule, ContractedService $cs) {
+    public function testOverlappingTasksViolation(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
-        $manager = new ScheduleManager($schedule);
 
         // Main task to be overlapped
         $schedule->addTask($tMain = (new Task())
@@ -98,28 +102,28 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
 
         $manager->reloadTasks();
 
-        $schedule->validateNoOverlappingTasks($this->context);
+        $manager->detectOverlappingTasks($this->context);
 
         $violations = $this->context->getViolations();
 //        var_dump($violations);
 
         $this
             // INSIDE
-            ->buildViolation(Schedule::VIOLATION_TASKS_OVERLAPPING)
+            ->buildViolation(ScheduleManager::VIOLATION_TASKS_OVERLAPPING)
             ->setParameter('{{ task_overlapped }}', (string) $t4)
             ->setParameter('{{ task }}', (string) $tMain)
-            ->buildNextViolation(Schedule::VIOLATION_TASKS_OVERLAPPING)
+            ->buildNextViolation(ScheduleManager::VIOLATION_TASKS_OVERLAPPING)
             ->setParameter('{{ task_overlapped }}', (string) $t4)
             ->setParameter('{{ task }}', (string) $t1)
 
-            ->buildNextViolation(Schedule::VIOLATION_TASKS_OVERLAPPING)
+            ->buildNextViolation(ScheduleManager::VIOLATION_TASKS_OVERLAPPING)
             ->setParameter('{{ task_overlapped }}', (string) $tMain)
             ->setParameter('{{ task }}', (string) $t2)
-            ->buildNextViolation(Schedule::VIOLATION_TASKS_OVERLAPPING)
+            ->buildNextViolation(ScheduleManager::VIOLATION_TASKS_OVERLAPPING)
             ->setParameter('{{ task_overlapped }}', (string) $tMain)
             ->setParameter('{{ task }}', (string) $t3)
             // OUTSIDE
-            ->buildNextViolation(Schedule::VIOLATION_TASKS_OVERLAPPING)
+            ->buildNextViolation(ScheduleManager::VIOLATION_TASKS_OVERLAPPING)
             ->setParameter('{{ task_overlapped }}', (string) $tMain)
             ->setParameter('{{ task }}', (string) $t5)
 
@@ -129,9 +133,8 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
     /**
      * @dataProvider scheduleAndContractedServiceProvider
      */
-    public function testDiscontinuousTask(Schedule $schedule, ContractedService $cs) {
+    public function testDiscontinuousTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
-        $manager = new ScheduleManager($schedule);
 
         $schedule->addTask($t1 = (new Task())
             ->setContractedService($cs)
@@ -145,18 +148,17 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
             ->setOnPremises(true));
 
         $manager->reloadTasks();
-
-        $schedule->detectDiscontinuousTasks($this->context);
+        $manager->detectDiscontinuousTasks($this->context);
 
         $violations = $this->context->getViolations();
 
         $this
             // INSIDE
-            ->buildViolation(Schedule::VIOLATION_DISCONTINUOUS_TASK)
+            ->buildViolation(ScheduleManager::VIOLATION_DISCONTINUOUS_TASK)
             ->setParameter('{{ task }}', (string) $t2)
             ->setParameter('{{ day }}', (string) $from->format(ScheduleManager::DATE_NOTIME))
             ->setParameter('{{ contracted_service }}', $cs)
-            ->buildNextViolation(Schedule::VIOLATION_DISCONTINUOUS_TASK)
+            ->buildNextViolation(ScheduleManager::VIOLATION_DISCONTINUOUS_TASK)
             ->setParameter('{{ task }}', (string) $t1)
             ->setParameter('{{ day }}', (string) $from->format(ScheduleManager::DATE_NOTIME))
             ->setParameter('{{ contracted_service }}', $cs)
@@ -177,8 +179,10 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
                 ->setHoursOnPremises(4)
             );
 
+        $manager = new ScheduleManager($schedule);
+
         $fixtures = [
-            '1' => [$schedule, $cs]
+            '1' => [$manager, $manager->getSchedule(), $cs]
         ];
 
         return $fixtures;

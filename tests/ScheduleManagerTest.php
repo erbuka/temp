@@ -4,13 +4,16 @@
 namespace App\Tests;
 
 
+use App\Entity\AddTaskCommand;
 use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\ContractedService;
 use App\Entity\Recipient;
+use App\Entity\RemoveTaskCommand;
 use App\Entity\Schedule;
 use App\Entity\Service;
 use App\Entity\Task;
+use App\ScheduleManager;
 use App\ScheduleManagerFactory;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -195,4 +198,88 @@ class ScheduleManagerTest extends KernelTestCase
         $this->assertEquals($from->modify('+1 day')->setTime(12, 0), $t2->getEnd(), "Changed non adjacent tasks end hour {$t2}");
 
     }
+
+    //region Commands
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testAddTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        // Required: empty schedule, task
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $manager->addTask($t);
+        $changeset = $manager->getScheduleChangeset();
+        /** @var AddTaskCommand $cmd */
+        $cmd = $changeset->getCommands()->first();
+
+        $this->assertTrue($schedule->getTasks()->contains($t), "Task not added into schedule");
+//        $this->assertSame($t, current($manager->getConsultantTasks($t->getConsultant())), "::tasksByConsultant misses the task");
+        $this->assertInstanceOf(AddTaskCommand::class, $cmd, "Executed command is not AddTaskCommand");
+        $this->assertSame($cmd->getTask(), $t, "Schedue command's task mismatch");
+        $this->assertContains($t, $manager->getConsultantTasks($t->getConsultant()), "::getConsultantTasks() out-of-sync");
+        $this->assertEquals($t->getHours(), $manager->getConsultantHours($t->getConsultant()), "::getConsultantHours() out of sync");
+
+        $cmd->undo();
+        $this->assertFalse($schedule->getTasks()->contains($t), "::undo() did not remove added task");
+    }
+
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testRemoveTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        // Required: empty schedule, task
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $manager->addTask($t);
+        $manager->removeTask($t);
+        $changeset = $manager->getScheduleChangeset();
+        /** @var AddTaskCommand $cmd */
+        $cmd = $changeset->getCommands()->last();
+
+        $this->assertFalse($schedule->getTasks()->contains($t), "Task still present in schedule");
+        $this->assertInstanceOf(RemoveTaskCommand::class, $cmd, "Executed command is not RemovedTaskCommand");
+        $this->assertNotContains($t, $manager->getConsultantTasks($t->getConsultant()), "::getConsultantTasks() out-of-sync");
+        $this->assertEquals(0, $manager->getConsultantHours($t->getConsultant()), "::getConsultantHours() out of sync");
+        $this->assertEquals(0, $manager->getConsultantHoursOnPremises($t->getConsultant()), "::getConsultantHoursOnPremises() out of sync");
+
+        $cmd->undo();
+        $this->assertTrue($schedule->getTasks()->contains($t), "::undo() did not add the removed task");
+    }
+
+    //endregion Commands
+
+    //region Providers
+
+    public function emptyScheduleAndContractedServiceProvider() {
+        $schedule = new Schedule($from = new \DateTimeImmutable('2021-07-15'), $from->modify('+12 month'));
+        $manager = static::getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+        $cs = (new ContractedService())
+            ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
+            ->setConsultant((new Consultant())->setName('Cugusi Mario'))
+            ->setService((new Service())
+                ->setName('3. Zootecnica')
+                ->setHours(10)
+                ->setHoursOnPremises(4)
+            );
+
+        $fixtures = [
+            'schedule#1' => [$manager, $schedule, $cs]
+        ];
+
+        return $fixtures;
+    }
+
+    //endregion Providers
 }

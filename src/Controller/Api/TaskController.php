@@ -146,21 +146,18 @@ class TaskController extends AbstractController
     }
 
     #[Route('/test', name: 'test', methods: ['GET'])]
-    public function test(ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): Response
+    public function test(EntityManagerInterface $entityManager, ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): Response
     {
-        $entityManager = $this->getDoctrine()->getManager();
-
+//        $entityManager->getFilters()->disable('softdeleteable');
         $schedule = current($entityManager->getRepository(Schedule::class)->findAll());
         assert($schedule !== null);
 
-        $consultant = $entityManager->getRepository(Consultant::class)->find('Belelli Fiorenzo');
-        assert($consultant !== null);
 
-        $s = ConsultantSchedule::fromSchedule($schedule, $consultant);
+        // Actions on the individual task
+        $task = $schedule->getTasks()->first();
 
-        $manager = $scheduleManagerFactory->createScheduleManager($s);
-
-        $validator->validate($s);
+        $entityManager->remove($task);
+        $entityManager->flush();
 
         return new Response('ok');
     }

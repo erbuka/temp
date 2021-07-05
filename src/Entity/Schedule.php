@@ -24,13 +24,10 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
 #[ScheduleAssert\TasksWithinBounds]
-#[ScheduleAssert\MatchContractedServiceHours(onPremisesOnly: true)]
+#[ScheduleAssert\MatchContractedServiceHours(remote: false)]
 class Schedule implements ScheduleInterface
 {
     public string $violationMessageContractedServiceExcessDailyHours = "Contracted service {{ cs }} has {{ hours }} > 5 hours on day {{ day }}";
-    const VIOLATION_TASKS_OVERLAPPING = "Task {{ task }} overlaps with task {{ task_overlapped }}";
-    const VIOLATION_DISCONTINUOUS_TASK = "Task {{ task }} of contracted service {{ contracted_service }} is split across discontinuous slots on day {{ day }}";
-    const VIOLATION_MULTIPLE_CONSULTANTS = 'Consultant schedule contains tasks of multiple consultants: {{ consultant }} !== {{ consultant_extraneous }}';
 
     //region Persisted fields
 
@@ -64,15 +61,29 @@ class Schedule implements ScheduleInterface
     private \DateTimeInterface $to;
 
     /**
+     * @ORM\Column(name="created_at", type="datetime_immutable")
+     */
+    #[AppAssert\DateTimeUTC]
+    private \DateTimeImmutable $createdAt;
+
+    /**
      * See https://gist.github.com/pylebecq/f844d1f6860241d8b025#:~:text=What's%20the%20difference%20between%20cascade,than%20one%20object%20being%20deleted.
      * For performance considerations, see https://www.doctrine-project.org/projects/doctrine-orm/en/2.9/reference/working-with-associations.html#transitive-persistence-cascade-operations
      * in particular: "Cascade operations require collections and related entities to be fetched into memory"
      *
-     * @ORM\OneToMany(targetEntity=Task::class, mappedBy="schedule", orphanRemoval=true, cascade={"persist"})
+     * Orphan removal is disabled because the task is referenced by multiple entities (ScheduleCommand)
+     *
+     * @ORM\OneToMany(targetEntity=Task::class, mappedBy="schedule", cascade={"persist"})
      * @ORM\OrderBy({"start" = "ASC"})
      * @var Collection<int, Task>
      */
     protected Collection $tasks;
+
+    /**
+     * @ORM\ManyToOne(targetEntity=Consultant::class)
+     * @ORM\JoinColumn(referencedColumnName="name", nullable=false)
+     */
+    private Consultant $consultant;
 
     //endregion Persisted fields
 
@@ -81,7 +92,7 @@ class Schedule implements ScheduleInterface
      */
     public \SplFixedArray $slots;
     private Period $period;
-    private ?ScheduleManager $manager;
+
 
     /**
      * Invoked only when creating new entities inside the app.
@@ -96,260 +107,14 @@ class Schedule implements ScheduleInterface
         $this->period = Period::make($fromDay, $toDay, Precision::HOUR(), Boundaries::EXCLUDE_END());
         $this->from = $this->period->start();
         $this->to = $this->period->end();
-    }
-
-    /**
-     * @deprecated
-     */
-    public function allocateContractedServicePass(Slot $initialSlot, int $maxSlots = 5): array
-    {
-        assert($initialSlot->isAllocated(), "Initial slot should be allocated");
-
-        $adjacentSlots = [];
-
-        $direction = match (rand(0,1)) {
-            0 => 'after',
-            1 => 'before',
-        };
-        /** @var ?Slot $next */
-        $next = $this->manager->getClosestFreeSlot($initialSlot);
-        if (!$next) {
-            $direction = $direction == 'before' ? 'after' : 'before';
-            $next = $this->manager->getClosestFreeSlot($initialSlot, direction: $direction);
-        }
-
-        if (!$next) throw new \RuntimeException('No more slots to allocate');
-        assert($next->isFree());
-
-        while ($next->isFree() && count($adjacentSlots) < $maxSlots) {
-            $adjacentSlots[] = $next;
-
-            $offset = match ($direction) {
-                'after' => 1,
-                'before' => -1,
-            };
-
-            $idx = $next->getIndex() + $offset;
-            if ($idx < 0 || $idx >= $this->slots->getSize())
-                break; // out of bounds
-
-            $next = $this->slots[$next->getIndex() + $offset];
-
-            // Avoid crossing days
-            if ($next->getStart()->format(ScheduleManager::DATE_NOTIME) != current($adjacentSlots)->getStart()->format(ScheduleManager::DATE_NOTIME))
-                break;
-        }
-
-        foreach ($adjacentSlots as $i => $slot) {
-            if (!isset($adjacentSlots[$i + 1])) break;
-
-            assert($slot->getPeriod()->touchesWith($adjacentSlots[$i + 1]->getPeriod()), sprintf("Non contiguous slots detected idx={$i},%s", $i+1));
-        }
-
-        assert(count($adjacentSlots) <= $maxSlots, sprintf("Returning more than requested slots: requested=%d returned=%d", $maxSlots, count($adjacentSlots)));
-
-        return $adjacentSlots;
+        $this->createdAt = new \DateTimeImmutable();
     }
 
     public function setManager(ScheduleManager $manager): static
     {
-        $this->manager = $manager;
+//        $this->manager = $manager;
         return $this;
     }
-
-    //region Validation callbacks
-
-    /**
-     * A contracted service cannot be assigned more than 5 hours (=slots) per day.
-     *
-     * @deprecated not actually used.. but maybe should be used for on-premises tasks?
-     */
-//    #[Assert\Callback]
-    public function validateContractedServicesDailyHours(ExecutionContextInterface $context)
-    {
-        assert(isset($this->slots), "Slots not inizialized");
-
-        $contractedServices = new \SplObjectStorage();
-        $prevSlotTimestamp = 0;
-        $prevSlotDay = '';
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-
-            assert($prevSlotTimestamp <= $slot->getStart()->getTimestamp(), "Slots not ordered in ascending order");
-
-            // reset tasks when day changes
-            if ($prevSlotDay !== $slot->getStart()->format(ScheduleManager::DATE_NOTIME)) {
-                // Perform the check
-                foreach ($contractedServices as $cs) {
-                    if ($contractedServices[$cs] > 5)
-                        $context->buildViolation($this->violationMessageContractedServiceExcessDailyHours)
-                            ->setParameter('{{ cs }}', $cs)
-                            ->setParameter('{{ hours }}', $contractedServices[$cs])
-                            ->setParameter('{{ day }}', $prevSlotDay)
-                            ->addViolation();
-                }
-
-                $contractedServices = new \SplObjectStorage();
-            }
-
-            foreach ($slot->getTasks() as $cs) {
-                /** @var Task $cs */
-                $cs = $cs->getContractedService();
-                if (!$contractedServices->contains($cs))
-                    $contractedServices[$cs] = 1;
-                else
-                    $contractedServices[$cs] += 1;
-            }
-
-            $prevSlotDay = $slot->getStart()->format(ScheduleManager::DATE_NOTIME);
-            $prevSlotTimestamp = $slot->getStart()->getTimestamp();
-        }
-    }
-
-    /**
-     * Should use only tasks.
-     * Should not depend on EntityManager or other services. If this is needed, refactor to external constraint.
-     * Advantage of using callbacks: access to private members.
-     *
-     * Assumes slots ordered by time ASC.
-     *
-     * @param ExecutionContextInterface $context
-     */
-    #[Assert\Callback(groups: ['consultant'])]
-    public function validateNoOverlappingTasks(ExecutionContextInterface $context)
-    {
-//        $tasks = $this->getTasks()->matching(ScheduleRepository::createSortedTasksCriteria());
-//        /** @var array<int, Task> $stack */
-//        $taskOverlaps = new \SplObjectStorage(); // <Task, Task[]>
-//        $overlapped = $tasks->first();
-//        foreach ($tasks as $task) {
-//            /** @var Task $task */
-//
-//            if ($overlapped->getEnd() > $task->getStart() && $overlapped !== $task) {
-////                $taskOverlaps[$overlapped] ??= [];
-//                $taskOverlaps[$overlapped] = [...($taskOverlaps[$overlapped] ?? []), $task]; // Append overlapping task
-//            } else {
-//                $overlapped = $task;
-//            }
-//        }
-//
-//        // Add violation for overlapping tasks
-//        foreach ($taskOverlaps as $task) {
-//            foreach ($taskOverlaps[$task] as $overlap) {
-//                $context->buildViolation(static::VIOLATION_TASKS_OVERLAPPING)
-//                    ->setParameter('{{ task }}', $overlap)
-//                    ->setParameter('{{ task_overlapped }}', $task)
-//                    ->addViolation();
-//            }
-//        }
-
-        $taskOverlaps = new \SplObjectStorage(); // <Task, Task[]>
-
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            $tasks = $slot->getTasks(); // returns a copy of type array
-            usort($tasks, fn(/** @var Task $t1 */ $t1, /** @var Task $t2 */ $t2) => $t1->getStart() <=> $t2->getStart());
-
-            if (count($tasks) > 1) {
-                $overlapped = array_shift($tasks);
-
-                if (!isset($taskOverlaps[$overlapped]))
-                    $taskOverlaps[$overlapped] = [];
-
-                foreach ($tasks as $task) {
-                    if (!in_array($task, $taskOverlaps[$overlapped]))
-                        $taskOverlaps[$overlapped] = [...$taskOverlaps[$overlapped], $task];
-                }
-            }
-        }
-
-        foreach ($taskOverlaps as $overlapped) {
-            /** @var Task $overlapped */
-            $overlaps = $taskOverlaps[$overlapped];
-
-            foreach ($overlaps as $task) {
-                $context->buildViolation(static::VIOLATION_TASKS_OVERLAPPING)
-                    ->setParameter('{{ task }}', $task)
-                    ->setParameter('{{ task_overlapped }}', $overlapped)
-//                        ->setInvalidValue($task)
-//                        ->atPath("slot({$slot->getIndex()}).task({$task})")
-                    ->addViolation();
-            }
-        }
-    }
-
-    /**
-     * Detects whether a task is spread across non-adjacent slots in the same day.
-     *
-     * Notice that a task is (consultant, recipient, service, on/off-premises).
-     */
-    #[Assert\Callback]
-    public function detectDiscontinuousTasks(ExecutionContextInterface $context)
-    {
-        $dayTasks = [];
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            $hash = $slot->getStart()->format(ScheduleManager::DATE_NOTIME);
-            if (!isset($dayTasks[$hash]))
-                $dayTasks[$hash] = [];
-
-            foreach ($slot->getTasks() as $task) {
-                if (!in_array($task, $dayTasks[$hash])) {
-                    $dayTasks[$hash][] = $task;
-                }
-            }
-        }
-
-        foreach ($dayTasks as $day => $tasks) {
-            /** @var Task[] $tasks */
-
-            foreach ($tasks as $task) {
-                /** @var Task $task */
-                $matches = array_filter($tasks,
-                    fn ($t) => $t !== $task
-                        && $t->getContractedService() === $task->getContractedService()
-                        && $t->isOnPremises() === $task->isOnPremises()
-                );
-
-                foreach ($matches as $m) {
-                    $context->buildViolation(static::VIOLATION_DISCONTINUOUS_TASK)
-                        ->setParameter('{{ task }}', (string) $m)
-                        ->setParameter('{{ day }}', $day)
-                        ->setParameter('{{ contracted_service }}', $task->getContractedService())
-                        ->addViolation();
-                }
-            }
-        }
-    }
-
-    /**
-     * These validation callbacks are implicitly applied only for individual consultant schedules.
-     * @param ExecutionContextInterface $context
-     * @return bool
-     */
-    #[Assert\Callback(groups: ['consultant'])]
-    public function validateTasksSameConsultant(ExecutionContextInterface $context)
-    {
-        /** @var Consultant $consultant */
-        $consultant = null;
-
-        foreach ($this->tasks as $task) {
-            /** @var Task $task */
-            if (!isset($consultant)) {
-                $consultant = $task->getConsultant();
-                continue;
-            }
-
-            if ($task->getConsultant() !== $consultant) {
-                $context->buildViolation(static::VIOLATION_MULTIPLE_CONSULTANTS)
-                    ->setParameter('{{ consultant }}', $consultant->getName())
-                    ->setParameter('{{ consultant_extraneous }}', $task->getConsultant()->getName())
-                    ->addViolation();
-            }
-        }
-    }
-
-    //endregion Validation callbacks
 
     //region Persisted fields accessors
 
@@ -393,14 +158,19 @@ class Schedule implements ScheduleInterface
         return $this;
     }
 
-    public function getFrom(): \DateTimeInterface
+    public function getFrom(): \DateTimeImmutable
     {
         return $this->from;
     }
 
-    public function getTo(): \DateTimeInterface
+    public function getTo(): \DateTimeImmutable
     {
         return $this->to;
+    }
+
+    public function getCreatedAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
     }
 
     //endregion Persisted fields accessors
@@ -421,6 +191,18 @@ class Schedule implements ScheduleInterface
     public function __toString(): string
     {
         return $this->getId() ?? $this->getUuid();
+    }
+
+    public function getConsultant(): Consultant
+    {
+        return $this->consultant;
+    }
+
+    public function setConsultant(Consultant $consultant): self
+    {
+        $this->consultant = $consultant;
+
+        return $this;
     }
 
 }

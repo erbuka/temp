@@ -6,15 +6,18 @@ namespace App;
 
 use App\Entity\Schedule;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\Workflow\WorkflowInterface;
 
 class ScheduleManagerFactory
 {
-    private EntityManagerInterface $entityManager;
+    private ?WorkflowInterface $taskWorkflow;
+//    private EntityManagerInterface $entityManager;
     private \SplObjectStorage $cache;
 
-    public function __construct(EntityManagerInterface $entityManager)
+    public function __construct(?WorkflowInterface $taskWorkflow)
     {
-        $this->entityManager = $entityManager;
+//        $this->entityManager = $entityManager;
+        $this->taskWorkflow = $taskWorkflow;
         $this->cache = new \SplObjectStorage();
     }
 
@@ -30,7 +33,7 @@ class ScheduleManagerFactory
         // the schedule lifetime (no setters).
 
         if (!isset($this->cache[$schedule])) {
-            $this->cache->attach($schedule, new ScheduleManager($schedule /*, $this->entityManager */));
+            $this->cache->attach($schedule, new ScheduleManager($schedule, $this->taskWorkflow));
         } else {
             $this->cache[$schedule]->reloadTasks();
         }

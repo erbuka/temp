@@ -121,6 +121,7 @@ class Slot implements \Stringable
     public function empty(): void
     {
         $this->tasks->removeAll($this->tasks);
+        assert(count($this->tasks) === 0);
     }
 
 

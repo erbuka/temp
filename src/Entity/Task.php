@@ -5,13 +5,19 @@ namespace App\Entity;
 use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use App\Validator\Constraints as AppAssert;
+use Gedmo\SoftDeleteable\Traits\SoftDeleteableEntity;
 use Symfony\Component\Validator\Constraints as Assert;
+use Gedmo\Mapping\Annotation as Gedmo;
 
 /**
  * @ORM\Entity(repositoryClass=TaskRepository::class)
+ * @ORM\HasLifecycleCallbacks()
+ * @Gedmo\SoftDeleteable()
  */
 class Task implements \Stringable
 {
+    use SoftDeleteableEntity;
+
     /**
      * @ORM\Id
      * @ORM\GeneratedValue
@@ -49,8 +55,14 @@ class Task implements \Stringable
     private bool $onPremises;
 
     /**
+     * @ORM\Column(type="array", nullable=false)
+     */
+//    #[Assert\NotNull]
+    private array $state;
+
+    /**
      * @ORM\ManyToOne(targetEntity=Schedule::class, inversedBy="tasks")
-     * @ORM\JoinColumn(nullable=false)
+     * @ORM\JoinColumn(nullable=false, onDelete="CASCADE")
      */
     private ?Schedule $schedule;
 
@@ -136,6 +148,17 @@ class Task implements \Stringable
         return $this;
     }
 
+    public function getState(): ?array
+    {
+        return $this->state ?? null;
+    }
+
+    public function setState(array $state, $context = []): static
+    {
+        $this->state = $state;
+        return $this;
+    }
+
     public function getSchedule(): ?Schedule
     {
         return $this->schedule;
@@ -170,4 +193,16 @@ class Task implements \Stringable
 
         return $interval->h;
     }
+
+    //region Lifecycle ORM
+
+    /**
+     * @ORM\PreRemove()
+     */
+    public function onPreDelete(): void
+    {
+//        throw new \LogicException("Tasks must not be deleted");
+    }
+
+    //endregion Lifecycle ORM
 }

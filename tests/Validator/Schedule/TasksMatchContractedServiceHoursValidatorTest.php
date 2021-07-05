@@ -44,7 +44,7 @@ class TasksMatchContractedServiceHoursValidatorTest extends ConstraintValidatorT
     /**
      * @dataProvider contractedServiceProvider
      */
-    public function testTotalHoursMismatch(ContractedService $cs) {
+    public function testRemoteHoursMismatch(ContractedService $cs) {
         $constraint = new MatchContractedServiceHours();
 
         $schedule = new Schedule(new \DateTime('2022-01-01T00:00:00Z'), new \DateTime('2023-01-01T00:00:00Z'));
@@ -67,9 +67,9 @@ class TasksMatchContractedServiceHoursValidatorTest extends ConstraintValidatorT
 //        $this->assertCount(1, $this->context->getViolations());
         $this->buildViolation($constraint->message)
             ->setParameter('{{ contracted_service }}', $cs)
-            ->setParameter('{{ type }}', 'total')
-            ->setParameter('{{ expected }}', $cs->getHours())
-            ->setParameter('{{ actual }}', $cs->getHours() + $cs->getHoursOnPremises())
+            ->setParameter('{{ type }}', 'remote')
+            ->setParameter('{{ expected }}', $cs->getHoursRemote())
+            ->setParameter('{{ actual }}', $cs->getHours())
             ->assertRaised();
     }
 
@@ -82,7 +82,7 @@ class TasksMatchContractedServiceHoursValidatorTest extends ConstraintValidatorT
 
         $schedule = new Schedule(new \DateTime('2022-01-01T00:00:00Z'), new \DateTime('2023-01-01T00:00:00Z'));
         $hoursOnPremises = $cs->getService()->getHoursOnPremises() - 1;
-        $hoursRemote = $cs->getService()->getHoursRemote() + 1;
+        $hoursRemote = $cs->getService()->getHoursRemote();
         $schedule->addTask((new Task())
             ->setContractedService($cs)
             ->setOnPremises(false)

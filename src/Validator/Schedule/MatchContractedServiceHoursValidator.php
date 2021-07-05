@@ -24,6 +24,7 @@ class MatchContractedServiceHoursValidator extends ConstraintValidator
 
         $allocatedSeconds = new \SplObjectStorage();
         $allocatedSecondsOnPremises = new \SplObjectStorage();
+        $allocatedSecondsRemote = new \SplObjectStorage();
 
         foreach ($value->getTasks() as $task) {
             /** @var Task $task */
@@ -33,11 +34,15 @@ class MatchContractedServiceHoursValidator extends ConstraintValidator
                 $allocatedSeconds->attach($cs, 0);
             if (!$allocatedSecondsOnPremises->contains($cs))
                 $allocatedSecondsOnPremises->attach($cs, 0);
+            if (!$allocatedSecondsRemote->contains($cs))
+                $allocatedSecondsRemote->attach($cs, 0);
 
             $taskSeconds = $task->getEnd()->getTimestamp() - $task->getStart()->getTimestamp();
             $allocatedSeconds[$cs] += $taskSeconds;
             if ($task->isOnPremises())
                 $allocatedSecondsOnPremises[$cs] += $taskSeconds;
+            else
+                $allocatedSecondsRemote[$cs] += $taskSeconds;
         }
 
         foreach ($allocatedSeconds as $cs) {
@@ -46,28 +51,30 @@ class MatchContractedServiceHoursValidator extends ConstraintValidator
                 throw new \RuntimeException(sprintf("%d seconds allocated for contracted service %s are not multiple of 1 hour", $allocatedSeconds[$cs], $cs));
             }
 
-            if (!$constraint->onPremisesOnly) {
-                $hours = (int) $allocatedSeconds[$cs] / 3600;
-                if ($cs->getHours() !== $hours) {
+            if ($constraint->remote) {
+                $hoursRemote = (int) $allocatedSecondsRemote[$cs] / 3600;
+                if ($cs->getHoursRemote() !== $hoursRemote) {
                     $this->context->buildViolation($constraint->message)
                         ->setParameter('{{ contracted_service }}', $cs)
-                        ->setParameter('{{ type }}', 'total')
-                        ->setParameter('{{ expected }}', $cs->getHours())
-                        ->setParameter('{{ actual }}', $hours)
+                        ->setParameter('{{ type }}', 'remote')
+                        ->setParameter('{{ expected }}', $cs->getHoursRemote())
+                        ->setParameter('{{ actual }}', $hoursRemote)
                         ->addViolation()
                     ;
                 }
             }
 
-            $hoursOnPremises = (int) $allocatedSecondsOnPremises[$cs] / 3600;
-            if ($cs->getService()->getHoursOnPremises() !== $hoursOnPremises) {
-                $this->context->buildViolation($constraint->message)
-                    ->setParameter('{{ contracted_service }}', $cs)
-                    ->setParameter('{{ type }}', 'on premises')
-                    ->setParameter('{{ expected }}', $cs->getService()->getHoursOnPremises())
-                    ->setParameter('{{ actual }}', $hoursOnPremises)
-                    ->addViolation()
-                ;
+            if ($constraint->onPremises) {
+                $hoursOnPremises = (int) $allocatedSecondsOnPremises[$cs] / 3600;
+                if ($cs->getHoursOnPremises() !== $hoursOnPremises) {
+                    $this->context->buildViolation($constraint->message)
+                        ->setParameter('{{ contracted_service }}', $cs)
+                        ->setParameter('{{ type }}', 'on premises')
+                        ->setParameter('{{ expected }}', $cs->getService()->getHoursOnPremises())
+                        ->setParameter('{{ actual }}', $hoursOnPremises)
+                        ->addViolation()
+                    ;
+                }
             }
         }
     }

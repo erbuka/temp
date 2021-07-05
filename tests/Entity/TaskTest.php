@@ -4,11 +4,21 @@
 namespace App\Tests\Entity;
 
 
+use App\Entity\Consultant;
+use App\Entity\Contract;
+use App\Entity\ContractedService;
+use App\Entity\Recipient;
+use App\Entity\Schedule;
+use App\Entity\Service;
 use App\Entity\Task;
+use App\Repository\TaskRepository;
+use App\Tests\DoctrineTrait;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 class TaskTest extends KernelTestCase
 {
+    use DoctrineTrait;
+
     public function testWeekendsInvalid() {
         $validator = $this->getContainer()->get('validator');
         $t = (new Task)
@@ -52,5 +62,45 @@ class TaskTest extends KernelTestCase
         $this->assertCount(1, $v);
         $this->assertSame($t->getEnd(), $v->get(0)->getInvalidValue());
         $this->assertEquals("Task end date is before or on start date", $v->get(0)->getMessage());
+    }
+
+    public function testTaskSoftDelete() {
+        $em = static::getManager();
+        $schedule = new Schedule($from = new \DateTimeImmutable(), $from->modify('+1 month'));
+        $cs = (new ContractedService())
+            ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
+            ->setConsultant((new Consultant())->setName('Cugusi Mario'))
+            ->setService((new Service())
+                ->setName('3. Zootecnica')
+                ->setHours(10)
+                ->setHoursOnPremises(4)
+            );
+        $schedule->setConsultant($cs->getConsultant());
+
+        $schedule->addTask($t1 = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs)
+            ->setState([])
+        );
+
+        static::persist($cs->getContract()->getRecipient());
+        static::persist($cs->getContract());
+        static::persist($cs->getConsultant());
+        static::persist($cs->getService());
+        static::persist($cs);
+        static::persist($schedule);
+        static::flush();
+
+        static::remove($t1);
+        static::flush();
+
+        $repo = $em->getRepository(Task::class);
+
+        $this->assertCount(0, $repo->findAll(), "Soft-deleted task is not filtered from query results");
+
+        static::getManager()->getFilters()->disable('softdeleteable');
+        $this->assertCount(1, $repo->findAll(), "Soft-deleted task has been deleted!");
     }
 }
