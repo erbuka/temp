@@ -11,7 +11,6 @@ use Gedmo\Mapping\Annotation as Gedmo;
 
 /**
  * @ORM\Entity(repositoryClass=TaskRepository::class)
- * @ORM\HasLifecycleCallbacks()
  * @Gedmo\SoftDeleteable()
  */
 class Task implements \Stringable
@@ -193,16 +192,4 @@ class Task implements \Stringable
 
         return $interval->h;
     }
-
-    //region Lifecycle ORM
-
-    /**
-     * @ORM\PreRemove()
-     */
-    public function onPreDelete(): void
-    {
-//        throw new \LogicException("Tasks must not be deleted");
-    }
-
-    //endregion Lifecycle ORM
 }

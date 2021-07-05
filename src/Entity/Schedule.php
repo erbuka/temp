@@ -46,19 +46,19 @@ class Schedule implements ScheduleInterface
     /**
      * First day included in the period.
      *
-     * @ORM\Column(name="`from`", type="datetime")
+     * @ORM\Column(name="`from`", type="datetime_immutable")
      */
     #[Assert\NotNull]
     #[AppAssert\DateTimeUTC]
-    private \DateTimeInterface $from;
+    private \DateTimeImmutable $from;
 
     /**
      * Day *after* last day included in the period
-     * @ORM\Column(name="`to`", type="datetime")
+     * @ORM\Column(name="`to`", type="datetime_immutable")
      */
     #[Assert\NotNull]
     #[AppAssert\DateTimeUTC]
-    private \DateTimeInterface $to;
+    private \DateTimeImmutable $to;
 
     /**
      * @ORM\Column(name="created_at", type="datetime_immutable")
@@ -110,12 +110,6 @@ class Schedule implements ScheduleInterface
         $this->createdAt = new \DateTimeImmutable();
     }
 
-    public function setManager(ScheduleManager $manager): static
-    {
-//        $this->manager = $manager;
-        return $this;
-    }
-
     //region Persisted fields accessors
 
     public function getId(): ?int
@@ -136,11 +130,14 @@ class Schedule implements ScheduleInterface
         return $this->tasks;
     }
 
+    /**
+     */
     public function addTask(Task $task): static
     {
         if (!$this->tasks->contains($task)) {
             $this->tasks[] = $task;
             $task->setSchedule($this);
+            $task->setDeletedAt(null);
         }
 
         return $this;
@@ -149,10 +146,7 @@ class Schedule implements ScheduleInterface
     public function removeTask(Task $task): static
     {
         if ($this->tasks->removeElement($task)) {
-            // set the owning side to null (unless already changed)
-            if ($task->getSchedule() === $this) {
-                $task->setSchedule(null);
-            }
+            $task->setDeletedAt(new \DateTime());
         }
 
         return $this;

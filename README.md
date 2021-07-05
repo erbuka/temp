@@ -46,3 +46,9 @@ must be performed. When entities are created/updated programmatically, the Valid
 
 ### Task
  - tasks are never reassigned between schedules?
+
+### Schedule Management
+
+After a schedule manager has been instantiated for a Schedule, task operations (Add/remove)
+*must* be performed through the manager. This is required in order to prevent synchronization 
+issues between the manager and the schedule tasks.

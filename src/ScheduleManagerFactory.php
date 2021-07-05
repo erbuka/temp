@@ -34,8 +34,6 @@ class ScheduleManagerFactory
 
         if (!isset($this->cache[$schedule])) {
             $this->cache->attach($schedule, new ScheduleManager($schedule, $this->taskWorkflow));
-        } else {
-            $this->cache[$schedule]->reloadTasks();
         }
 
         return $this->cache[$schedule];

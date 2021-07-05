@@ -52,17 +52,20 @@ class ScheduleManager implements ScheduleInterface
     private \SplObjectStorage $consultantHoursOnPremises;
     //endregion Indices
 
+    /**
+     * NOTA BENE: called once for each Schedule via ScheduleManagerFactory.
+     *
+     * @param Schedule $schedule
+     * @param WorkflowInterface|null $taskWorkflow
+     */
     public function __construct(Schedule $schedule, ?WorkflowInterface $taskWorkflow = null)
     {
         $this->schedule = $schedule;
         $this->taskWorkflow = $taskWorkflow;
-//        $schedule->setManager($this);
 
         $this->period = Period::make($schedule->getFrom(), $schedule->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END());
 
-        $this->generateSlots();
         $this->reloadTasks();
-        $this->initializeChangeset();
     }
 
     public function getSchedule(): ScheduleInterface
@@ -151,15 +154,8 @@ class ScheduleManager implements ScheduleInterface
      */
     public function reloadTasks()
     {
-        // Empty all slots
-        if (!isset($this->slots))
-            $this->generateSlots();
-        else
-            $this->clearSlots();
-
-        $this->tasksByConsultant = new \SplObjectStorage();
-        $this->consultantHours = new \SplObjectStorage();
-        $this->consultantHoursOnPremises = new \SplObjectStorage();
+        $this->initializeIndices();
+        $this->initializeChangeset();
 
         // Load tasks
         $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createTasksSortedByStartCriteria());
@@ -192,30 +188,6 @@ class ScheduleManager implements ScheduleInterface
      */
     protected function loadTaskIntoSlots(Task $task)
     {
-        // A task is considered to belong to a slot iff its starting
-        $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
-
-//        if ($this->isTaskLoaded($task)) {
-//            throw new \LogicException("Task ${task} already loaded into slots");
-//        }
-
-        $allocatedSlots = new \SplObjectStorage();
-        foreach ($period as $hour) {
-            $key = static::getDayHourHash($hour);
-
-            if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
-
-            assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
-
-            $slot = $this->slotsByDayHours[$key];
-            $slot->addTask($task);
-            $allocatedSlots->attach($slot);
-        }
-
-        assert(count($allocatedSlots) === $task->getHours());
-        assert($period->length() === $task->getHours());
-
         $this->addTaskIntoIndices($task);
     }
 
@@ -759,9 +731,6 @@ class ScheduleManager implements ScheduleInterface
             $prevSlot = $slot;
             $prevSlotDayHash = $dayHash;
         }
-
-        // TODO inefficient but works
-        $this->reloadTasks();
     }
 
     /**
@@ -918,7 +887,7 @@ class ScheduleManager implements ScheduleInterface
     }
 
 
-    //region Commands
+    //region Commands API
 
     public function addTask(Task $task): static
     {
@@ -1047,6 +1016,46 @@ class ScheduleManager implements ScheduleInterface
     }
 
     //region Indices operations
+
+    protected function addTaskIntoIndices(Task $task)
+    {
+        $consultant = $task->getConsultant();
+        // A task is considered to belong to a slot iff its starting
+        $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
+
+        $allocatedSlots = new \SplObjectStorage();
+        foreach ($period as $hour) {
+            $key = static::getDayHourHash($hour);
+
+            if (!isset($this->slotsByDayHours[$key]))
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+
+            assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
+
+            $slot = $this->slotsByDayHours[$key];
+            $slot->addTask($task);
+            $allocatedSlots->attach($slot);
+        }
+        assert(count($allocatedSlots) === $task->getHours());
+        assert($period->length() === $task->getHours());
+
+        if (!isset($this->tasksByConsultant[$consultant]))
+            $this->tasksByConsultant[$consultant] = new \SplObjectStorage();
+        $this->tasksByConsultant[$consultant]->attach($task);
+
+        if (!isset($this->consultantHours[$consultant])) {
+            $this->consultantHours[$consultant] = $task->getHours();
+        } else
+            $this->consultantHours[$consultant] += $task->getHours();
+
+        if ($task->isOnPremises()) {
+            if (!isset($this->consultantHoursOnPremises[$consultant])) {
+                $this->consultantHoursOnPremises[$consultant] = $task->getHours();
+            } else
+                $this->consultantHoursOnPremises[$consultant] += $task->getHours();
+        }
+    }
+
     protected function removeTaskFromIndices(Task $task)
     {
         $period = Period::make($task->getStart(), $task->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
@@ -1080,25 +1089,17 @@ class ScheduleManager implements ScheduleInterface
         }
     }
 
-    protected function addTaskIntoIndices(Task $task)
+    protected function initializeIndices(): void
     {
-        $consultant = $task->getConsultant();
+        // Prevent expensive generation of slots which is not needed because schedule's from/to are invariants.
+        if (!isset($this->slots))
+            $this->generateSlots();
+        else
+            $this->clearSlots();
 
-        if (!isset($this->tasksByConsultant[$consultant]))
-            $this->tasksByConsultant[$consultant] = new \SplObjectStorage();
-        $this->tasksByConsultant[$consultant]->attach($task);
-
-        if (!isset($this->consultantHours[$consultant])) {
-            $this->consultantHours[$consultant] = $task->getHours();
-        } else
-            $this->consultantHours[$consultant] += $task->getHours();
-
-        if ($task->isOnPremises()) {
-            if (!isset($this->consultantHoursOnPremises[$consultant])) {
-                $this->consultantHoursOnPremises[$consultant] = $task->getHours();
-            } else
-                $this->consultantHoursOnPremises[$consultant] += $task->getHours();
-        }
+        $this->tasksByConsultant = new \SplObjectStorage();
+        $this->consultantHours = new \SplObjectStorage();
+        $this->consultantHoursOnPremises = new \SplObjectStorage();
     }
 
     //endregion Indices operations

@@ -16,7 +16,7 @@ abstract class TaskCommand extends ScheduleCommand
     /**
      * The task is not expected to be permanently deleted, only filtered by Doctrine.
      *
-     * @ORM\ManyToOne(targetEntity=Task::class)
+     * @ORM\ManyToOne(targetEntity=Task::class, cascade={"persist"})
      * @ORM\JoinColumn(nullable=false, onDelete="CASCADE")
      */
     private Task $task;

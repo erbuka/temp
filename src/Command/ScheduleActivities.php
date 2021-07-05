@@ -47,8 +47,8 @@ class ScheduleActivities extends Command
         $this->scheduleGenerator = $scheduleGenerator;
         $this->scheduleManagerFactory = $scheduleManagerFactory;
 
-        $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-08T00:00:00Z');
-        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-07-08T00:00:00Z');
+        $this->from = \DateTimeImmutable::createFromFormat(DATE_ATOM,'2021-07-15T00:00:00Z');
+        $this->to = \DateTimeImmutable::createFromFormat(DATE_ATOM, '2022-07-15T00:00:00Z');
 
         parent::__construct();
     }
@@ -60,54 +60,28 @@ class ScheduleActivities extends Command
 
         $output->writeln(sprintf('Scheduling activities from %s to %s', $this->from->format(DATE_RFC3339), $this->to->format(DATE_RFC3339)));
 
-//        $schedule = new Schedule($this->from, $this->to);
-//        $manager = $this->scheduleManagerFactory->createScheduleManager($schedule);
-
         foreach ($this->entityManager->getRepository(Consultant::class)->findAll() as $consultant) {
             /** @var Consultant $consultant */
             $this->scheduleGenerator->setOutput($this->output);
 
             // Remove existing schedules (!!)
             foreach ($this->entityManager->getRepository(Schedule::class)->findBy(['consultant' => $consultant]) as $schedule) {
-//                foreach ($schedule->getTasks() as $task) {
-//                    $this->entityManager->remove($task);
-//                }
-
                 $this->entityManager->remove($schedule);
                 $this->entityManager->flush();
             }
 
             $consultantSchedule = $this->scheduleGenerator->generateSchedule($consultant, $this->from, $this->to);
             $consultantScheduleManager = $this->scheduleManagerFactory->createScheduleManager($consultantSchedule);
-            $changeset = $consultantScheduleManager->getScheduleChangeset();
+//            $changeset = $consultantScheduleManager->getScheduleChangeset();
 
             $this->entityManager->persist($consultantSchedule);
-            $this->entityManager->persist($changeset);
-
-            foreach ($consultantSchedule->getTasks() as $task) {
-                /** @var Task $task */
-                assert($this->entityManager->contains($task));
-
-//                $output->writeln("Schedule" . $task->getSchedule());
-                assert($task->getSchedule() === $consultantSchedule, "Task {$task} has wrong schedule {$task->getSchedule()}");
-            }
-
 //            $this->entityManager->persist($changeset);
-            $this->entityManager->flush();
-
-//            return Command::SUCCESS;
+//            $this->entityManager->flush();
 
             $this->output->writeln(sprintf("<info>Schedule for %s</info> %s", $consultant->getName(), $consultantScheduleManager->getStats()));
 
-//            $manager->merge($consultantSchedule);
         }
 
-//        if (count($errors = $this->validator->validate($manager, groups: ['Default', 'generation'])) > 0)
-//            throw new \Exception("Cannot validate schedule ". $errors);
-
-//        $this->output->writeln("<info>Generated schedule</info> {$manager->getStats()}");
-
-//        $this->entityManager->persist($schedule);
         $this->entityManager->flush();
 
         return Command::SUCCESS;

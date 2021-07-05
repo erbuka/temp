@@ -53,6 +53,7 @@ class TaskController extends AbstractController
             $filter['schedule'] = $em->getRepository(Schedule::class)->find($filter['schedule']);
             if (!$filter['schedule']) $this->createNotFoundException("Invalid schedule");
         }
+        // TODO check permissions
         if (isset($filter['consultant'])) {
             $filter['consultant'] = $em->getRepository(Consultant::class)->find($filter['consultant']);
             if (!$filter['consultant']) $this->createNotFoundException("Invalid consultant");
@@ -60,8 +61,9 @@ class TaskController extends AbstractController
 
         // Defaults
         if (!isset($filter['schedule'])) {
-            // Fetch the latest schedule
-            $filter['schedule'] = current(array_reverse($em->getRepository(Schedule::class)->findAll()));
+            // Fetch the latest consultant schedule
+            assert(isset($filter['consultant']), "Cannot determine which schedule to fetch");
+            $filter['schedule'] = $em->getRepository(Schedule::class)->findOneBy(['consultant' => $filter['consultant']]);
         }
 
         // Base query
@@ -103,10 +105,7 @@ class TaskController extends AbstractController
                 'start' => $task->getStart()->format(DATE_ATOM),
                 'end' => $task->getEnd()->format(DATE_ATOM),
 //                'title' => "{$task->getService()} @ {$task->getRecipient()->getHeadquarters()} - {$task->getRecipient()}",
-                'title' => match ($isOnPremises) {
-                    true => "{$task->getService()} | {$task->getRecipient()}",
-                    false => "{$task->getService()} | {$task->getRecipient()}",
-                },
+                'title' => "{$task->getService()} | {$task->getRecipient()}",
                 'backgroundColor' => match ($isOnPremises) {
                     true => 'green',
                     false => 'cornflowerblue'

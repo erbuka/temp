@@ -80,25 +80,20 @@ class FrontController extends AbstractController
         ]);
     }
 
-    #[Route('/schedules/{uuid}')]
-    public function generateSchedule(string $uuid, ScheduleManagerFactory $scheduleManagerFactory): Response
+    #[Route('/schedules')]
+    public function generateSchedules(EntityManagerInterface $entityManager, ScheduleManagerFactory $scheduleManagerFactory): Response
     {
-        $schedule = $this->getDoctrine()->getRepository(Schedule::class)->findOneBy(['uuid' => $uuid]);
-        if (!$schedule)
-            throw $this->createNotFoundException("No schedule found with uuid={$uuid}");
-
-        $manager = $scheduleManagerFactory->createScheduleManager($schedule);
-        $tasksByConsultant = $manager->getTasksByConsultant();
-
-        $consultantsSortedByName = iterator_to_array($tasksByConsultant);
-        usort($consultantsSortedByName, fn(/** @var Consultant $c1 */ $c1,/** @var Consultant $c2 */ $c2) => $c1->getName() <=> $c2->getName());
+        $schedules = $entityManager
+            ->createQuery('SELECT s FROM '. Schedule::class .' s ORDER BY s.consultant ASC')
+            ->getResult();
 
         $consultants = [];
-        foreach ($consultantsSortedByName as $consultant) {
-            /** @var Consultant $consultant */
+        foreach ($schedules as $schedule) {
+            /** @var Schedule $schedule */
+            $manager = $scheduleManagerFactory->createScheduleManager($schedule);
 
             $tasks = [];
-            foreach ($tasksByConsultant[$consultant] as $task) {
+            foreach ($schedule->getTasks() as $task) {
                 /** @var Task $task */
                 if (!$task->isOnPremises())
                     continue;
@@ -112,6 +107,7 @@ class FrontController extends AbstractController
                 ];
             }
 
+            $consultant = $schedule->getConsultant();
             $consultants[] = [
                 'name' => $consultant->getName(),
                 'job' => $consultant->getJobTitle(),
@@ -123,8 +119,6 @@ class FrontController extends AbstractController
 
         return $this->render('schedule.twig', [
             'base' => static::APP_DIRECTORY,
-            'schedule_manager' => $manager,
-            'schedule' => $schedule,
             'consultants' => $consultants
         ]);
     }
