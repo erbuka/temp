@@ -101,6 +101,10 @@
             "bin/console --env=test --quiet --no-interaction doctrine:schema:drop --force",
             "bin/console --env=test --quiet --no-interaction doctrine:schema:create",
             "bin/phpunit"
+        ],
+        "load-initial-schedule": [
+            "mysql -uroot conagrivet < src/DataFixtures/conagrivet-20210705.schema.sql",
+            "mysql -uroot conagrivet < src/DataFixtures/conagrivet-20210705.data.sql"
         ]
     },
     "conflict": {
