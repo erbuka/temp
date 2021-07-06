@@ -88,13 +88,6 @@ class Schedule implements ScheduleInterface
     //endregion Persisted fields
 
     /**
-     * Slots are effectively managed by ScheduleManager which sets a reference to the slots when instantiated.
-     */
-    public \SplFixedArray $slots;
-    private Period $period;
-
-
-    /**
      * Invoked only when creating new entities inside the app.
      * Never invoked by Doctrine when retrieving objcts from the database.
      *
@@ -104,9 +97,8 @@ class Schedule implements ScheduleInterface
     {
         $this->tasks = new ArrayCollection();
         $this->uuid = Uuid::v4();
-        $this->period = Period::make($fromDay, $toDay, Precision::HOUR(), Boundaries::EXCLUDE_END());
-        $this->from = $this->period->start();
-        $this->to = $this->period->end();
+        $this->from = \DateTimeImmutable::createFromInterface($fromDay);
+        $this->to = \DateTimeImmutable::createFromInterface($toDay);
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -130,8 +122,6 @@ class Schedule implements ScheduleInterface
         return $this->tasks;
     }
 
-    /**
-     */
     public function addTask(Task $task): static
     {
         if (!$this->tasks->contains($task)) {
@@ -167,26 +157,6 @@ class Schedule implements ScheduleInterface
         return $this->createdAt;
     }
 
-    //endregion Persisted fields accessors
-
-    public function containsTask(Task $task): bool
-    {
-        return $this->tasks->contains($task);
-    }
-
-    public function getPeriod(): Period
-    {
-        if (!isset($this->period))
-            $this->period = Period::make($this->getFrom(), $this->getTo(), Precision::HOUR(), Boundaries::EXCLUDE_END());
-
-        return $this->period;
-    }
-
-    public function __toString(): string
-    {
-        return $this->getId() ?? $this->getUuid();
-    }
-
     public function getConsultant(): Consultant
     {
         return $this->consultant;
@@ -199,4 +169,15 @@ class Schedule implements ScheduleInterface
         return $this;
     }
 
+    //endregion Persisted fields accessors
+
+    public function containsTask(Task $task): bool
+    {
+        return $this->tasks->contains($task);
+    }
+
+    public function __toString(): string
+    {
+        return $this->getId() ?? $this->getUuid();
+    }
 }

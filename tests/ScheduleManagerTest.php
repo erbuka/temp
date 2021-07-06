@@ -313,8 +313,30 @@ class ScheduleManagerTest extends KernelTestCase
     /**
      * @dataProvider emptyScheduleAndContractedServiceProvider
      */
-    public function testMoveTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs)
-    {
+    public function testMoveTaskToAllocatedSlotsThrows(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+        $t2 = (new Task)
+            ->setStart($from->setTime(13, 0))
+            ->setEnd($from->setTime(18, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $manager->addTask($t);
+        $manager->addTask($t2);
+
+        $this->expectExceptionMessageMatches('/Refusing to move task .+ to period .+ because the slots are not free/i');
+        $manager->moveTask($t, Period::make($from->setTime(10, 0), $from->setTime(16, 0), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+    }
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testMoveTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
         $from = $schedule->getFrom();
         $t = (new Task)
             ->setStart($from->setTime(10, 0))
@@ -323,7 +345,10 @@ class ScheduleManagerTest extends KernelTestCase
             ->setContractedService($cs);
 
         $manager->addTask($t);
-        $manager->moveTask($t, $tp = Period::make($from->modify('+1 day')->setTime(12, 0), $from->modify('+1 day')->setTime(18, 0), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+        $manager->moveTask($t, $tp = Period::make(
+            $from->modify('+1 day')->setTime(12, 0),
+            $from->modify('+1 day')->setTime(18, 0), Precision::HOUR(), Boundaries::EXCLUDE_END()
+        ));
         $changeset = $manager->getScheduleChangeset();
         /** @var MoveTaskCommand $cmd */
         $cmd = $changeset->getCommands()->last();
@@ -334,8 +359,23 @@ class ScheduleManagerTest extends KernelTestCase
         $this->assertSame($cmd->getTask(), $t, "Schedule command's task mismatch");
     }
 
-    public function testMoveTaskUndo() {
-        $this->markTestIncomplete();
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testResizeTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs)
+    {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $manager->addTask($t);
+        $manager->moveTask($t, $tp = Period::make($t->getStart()->setTime(8, 0), $t->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+
+        $this->assertCount(1, $manager->getConsultantTasks($t->getConsultant()), "Consultant should have only 1 task after move");
+        $this->assertEquals($t->getHours(), $manager->getConsultantHours($t->getConsultant()), "Schedule total hours mismatch");
     }
 
     //endregion Commands

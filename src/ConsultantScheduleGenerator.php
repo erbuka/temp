@@ -118,7 +118,7 @@ class ConsultantScheduleGenerator
             $head = $tail = null;
             while ($onPremisesHours > 0) {
                 if (!$head || !$tail)
-                    $backwardsPeriod = $forwardsPeriod = $schedule->getPeriod();
+                    $backwardsPeriod = $forwardsPeriod = $manager->getSchedulePeriod();
                 else {
                     $backwardsPeriod = Period::make(
                         $head->sub(new \DateInterval('P14D')),
@@ -132,8 +132,8 @@ class ConsultantScheduleGenerator
                         Precision::HOUR(), Boundaries::EXCLUDE_NONE()
                     );
 
-                    $backwardsPeriod = $backwardsPeriod->overlap($schedule->getPeriod());
-                    $forwardsPeriod = $forwardsPeriod->overlap($schedule->getPeriod());
+                    $backwardsPeriod = $backwardsPeriod->overlap($manager->getSchedulePeriod());
+                    $forwardsPeriod = $forwardsPeriod->overlap($manager->getSchedulePeriod());
                 }
 
                 if (!$backwardsPeriod)
@@ -153,10 +153,10 @@ class ConsultantScheduleGenerator
                     $forwardsPeriod => $backwardsPeriod,
                 };
 
-                if (!$period || $period->length() < 2*10) $period = $schedule->getPeriod();
+                if (!$period || $period->length() < 2*10) $period = $manager->getSchedulePeriod();
 
                 assert($period !== null, "Unable to select a period to be used to fetch random slots");
-                assert($period->overlapsWith($schedule->getPeriod()));
+                assert($period->overlapsWith($manager->getSchedulePeriod()));
 
                 // TODO try getting random adjacent slots on the same day
                 // if that fails, then just randomly allocate on the same day ** AND CONSOLIDATE + COMPACT **
@@ -181,7 +181,7 @@ class ConsultantScheduleGenerator
                     } catch (NoSlotsAvailableException $e) {
                         $manager->allocateAdjacentSameDaySlots($task,
                             preferred: min($preferredHours, $onPremisesHours),
-                            period: $schedule->getPeriod()
+                            period: $manager->getSchedulePeriod()
                         );
                     }
                 }

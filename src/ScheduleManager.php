@@ -73,7 +73,7 @@ class ScheduleManager implements ScheduleInterface
 
     private function generateSlots()
     {
-        assert(!isset($this->slots) && !isset($this->schedule->slots), "Refusing to overwrite existing slots in Schedule");
+        assert(!isset($this->slots), "Refusing to overwrite existing slots in Schedule");
 
         $eligibleDays = [];
         $slotsMap = [];
@@ -122,7 +122,7 @@ class ScheduleManager implements ScheduleInterface
 
     private function setSlots(\SplFixedArray $slots): void
     {
-        $this->slots = $this->schedule->slots = $slots;
+        $this->slots = $slots;
     }
 
     /**
@@ -202,9 +202,9 @@ class ScheduleManager implements ScheduleInterface
         $slots = $this->slots;
 
         if (!$period)
-            $period = $this->schedule->getPeriod();
+            $period = $this->getSchedulePeriod();
 
-        assert($this->schedule->getPeriod()->contains($period));
+        assert($this->getSchedulePeriod()->contains($period));
 
         $afterIndex = $this->getPeriodStartSlot($period)->getIndex();
         $beforeIndex = $this->getPeriodEndSlot($period)->getIndex();
@@ -235,7 +235,7 @@ class ScheduleManager implements ScheduleInterface
             throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
 
         if (!$period)
-            $period = $this->schedule->getPeriod();
+            $period = $this->getSchedulePeriod();
 
         /** @var Slot[] $slots */
         $initialSlot = $this->getRandomFreeSlot($period);
@@ -295,9 +295,9 @@ class ScheduleManager implements ScheduleInterface
             throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
 
         if (!$period)
-            $period = $this->schedule->getPeriod();
+            $period = $this->getSchedulePeriod();
 
-        assert($this->schedule->getPeriod()->contains($period));
+        assert($this->getSchedulePeriod()->contains($period));
 
         // Starts
         $afterIndex = $this->getPeriodStartSlot($period)->getIndex(); // Included
@@ -522,8 +522,8 @@ class ScheduleManager implements ScheduleInterface
      */
     protected function getClosestFreeSlot(Slot $slot, Period $period = null, string $direction = 'both'): Slot
     {
-        if (!$period) $period = $this->schedule->getPeriod();
-        assert($this->schedule->getPeriod()->contains($period));
+        if (!$period) $period = $this->getSchedulePeriod();
+        assert($this->getSchedulePeriod()->contains($period));
         assert($period->contains($slot->getPeriod()));
 
         $slotIndex = $slot->getIndex();
@@ -825,8 +825,8 @@ class ScheduleManager implements ScheduleInterface
             /** @var Slot $slot */
             $slot = $this->slots[$i];
 
-            if (!$slot->isFree())
-                throw new \LogicException("Cannot must task {$task} to period {$period->asString()} because the slots are not free");
+            if ($slot->isAllocated() && !$slot->containsTask($task))
+                throw new \LogicException("Refusing to move task {$task} to period {$period->asString()} because the slots are not free");
         }
 
         // Remove task from indices
@@ -848,7 +848,7 @@ class ScheduleManager implements ScheduleInterface
 
     //endregion Commands
 
-    protected function getSchedulePeriod(Precision $precision = null): Period
+    public function getSchedulePeriod(Precision $precision = null): Period
     {
         if (!$precision)
             $precision = Precision::HOUR();
@@ -960,7 +960,7 @@ class ScheduleManager implements ScheduleInterface
             $key = static::getDayHourHash($hour);
 
             if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->schedule->getPeriod()->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->getSchedulePeriod()->asString()}");
 
             assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
 
@@ -998,7 +998,7 @@ class ScheduleManager implements ScheduleInterface
         foreach ($period as $hour) {
             $key = static::getDayHourHash($hour);
             if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->schedule->getPeriod()->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->getSchedulePeriod()->asString()}");
 
             $slot = $this->slotsByDayHours[$key];
             $slot->removeTask($task);
@@ -1197,7 +1197,7 @@ class ScheduleManager implements ScheduleInterface
 
         return sprintf("id=%s period=%s consultants=%d | slots=%d free=%d | tasks=%d hours=%d onpremises=%d",
             $this->id ?? $this->schedule->getUuid()->toRfc4122(),
-            $this->schedule->getPeriod()->asString(),
+            $this->getSchedulePeriod()->asString(),
             count($this->tasksByConsultant),
             count($this->slots),
             $freeSlots,
