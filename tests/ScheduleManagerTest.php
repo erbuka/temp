@@ -8,6 +8,7 @@ use App\Entity\AddTaskCommand;
 use App\Entity\Consultant;
 use App\Entity\Contract;
 use App\Entity\ContractedService;
+use App\Entity\MoveTaskCommand;
 use App\Entity\Recipient;
 use App\Entity\RemoveTaskCommand;
 use App\Entity\Schedule;
@@ -15,6 +16,9 @@ use App\Entity\Service;
 use App\Entity\Task;
 use App\ScheduleManager;
 use App\ScheduleManagerFactory;
+use Spatie\Period\Boundaries;
+use Spatie\Period\Period;
+use Spatie\Period\Precision;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 class ScheduleManagerTest extends KernelTestCase
@@ -256,6 +260,82 @@ class ScheduleManagerTest extends KernelTestCase
 
         $cmd->undo();
         $this->assertTrue($schedule->getTasks()->contains($t), "::undo() did not add the removed task");
+    }
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testMoveTaskNotBelongingToScheduleException(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $this->expectExceptionMessageMatches('/task .+ does not belong to schedule/i');
+        $manager->moveTask($t, Period::make($from, $from->modify('+1 hour'), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+    }
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testMoveTaskPeriodOutsideSchedule(ScheduleManager $manager, Schedule $schedule, ContractedService $cs) {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $this->expectExceptionMessageMatches('/Period .+ is outside schedule period .+/i');
+        $manager->addTask($t);
+        $manager->moveTask($t, Period::make($from->setTime(6, 0), $t->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+    }
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testMoveTaskInvalidPeriodPrecision(ScheduleManager $manager, Schedule $schedule, ContractedService $cs)
+    {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $this->expectExceptionMessageMatches('/Period precision .+ does not match .+/i');
+        $manager->addTask($t);
+        $manager->moveTask($t, Period::make($from->setTime(6, 0), $t->getEnd(), Precision::MINUTE(), Boundaries::EXCLUDE_END()));
+    }
+
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testMoveTask(ScheduleManager $manager, Schedule $schedule, ContractedService $cs)
+    {
+        $from = $schedule->getFrom();
+        $t = (new Task)
+            ->setStart($from->setTime(10, 0))
+            ->setEnd($from->setTime(12, 0))
+            ->setOnPremises(true)
+            ->setContractedService($cs);
+
+        $manager->addTask($t);
+        $manager->moveTask($t, $tp = Period::make($from->modify('+1 day')->setTime(12, 0), $from->modify('+1 day')->setTime(18, 0), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+        $changeset = $manager->getScheduleChangeset();
+        /** @var MoveTaskCommand $cmd */
+        $cmd = $changeset->getCommands()->last();
+
+        $this->assertCount(1, $manager->getConsultantTasks($t->getConsultant()), "Consultant should have only 1 task after move");
+        $this->assertEquals($t->getHours(), $manager->getConsultantHours($t->getConsultant()), "Schedule total hours mismatch");
+        $this->assertInstanceOf(MoveTaskCommand::class, $cmd, "Executed command is not MoveTaskCommand");
+        $this->assertSame($cmd->getTask(), $t, "Schedule command's task mismatch");
+    }
+
+    public function testMoveTaskUndo() {
+        $this->markTestIncomplete();
     }
 
     //endregion Commands

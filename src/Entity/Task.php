@@ -6,6 +6,9 @@ use App\Repository\TaskRepository;
 use Doctrine\ORM\Mapping as ORM;
 use App\Validator\Constraints as AppAssert;
 use Gedmo\SoftDeleteable\Traits\SoftDeleteableEntity;
+use Spatie\Period\Boundaries;
+use Spatie\Period\Period;
+use Spatie\Period\Precision;
 use Symfony\Component\Validator\Constraints as Assert;
 use Gedmo\Mapping\Annotation as Gedmo;
 
@@ -25,13 +28,13 @@ class Task implements \Stringable
     private int $id;
 
     /**
-     * @ORM\Column(type="datetime")
+     * @ORM\Column(type="datetime_immutable")
      */
     #[Assert\NotNull]
     #[AppAssert\NotItalianHoliday]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value.format('w') not in [6,0]", message: "Task is on a weekend day")]
-    private \DateTimeInterface $start;
+    private \DateTimeImmutable $start;
 
     /**
      * The exact time at which the task ends.
@@ -39,13 +42,13 @@ class Task implements \Stringable
      * it has to be interpreted as "just before the other task starts"
      * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
      *
-     * @ORM\Column(type="datetime")
+     * @ORM\Column(type="datetime_immutable")
      */
     #[Assert\NotNull]
     #[AppAssert\TimeRange(from: '08:00', to: '19:00')]
     #[Assert\Expression("value > this.getStart()", message: "Task end date is before or on start date")]
     #[Assert\Expression("value.format('Ymd') === this.getStart().format('Ymd')", message: "Task spans across multiple days")]
-    private \DateTimeInterface $end;
+    private \DateTimeImmutable $end;
 
     /**
      * @ORM\Column(type="boolean")
@@ -111,26 +114,26 @@ class Task implements \Stringable
         return $this->contractedService->getService();
     }
 
-    public function getStart(): \DateTimeInterface
+    public function getStart(): \DateTimeImmutable
     {
         return $this->start;
     }
 
     public function setStart(\DateTimeInterface $start): self
     {
-        $this->start = $start;
+        $this->start = \DateTimeImmutable::createFromInterface($start);
 
         return $this;
     }
 
-    public function getEnd(): \DateTimeInterface
+    public function getEnd(): \DateTimeImmutable
     {
         return $this->end;
     }
 
     public function setEnd(\DateTimeInterface $end): self
     {
-        $this->end = $end;
+        $this->end = \DateTimeImmutable::createFromInterface($end);
 
         return $this;
     }
@@ -191,5 +194,13 @@ class Task implements \Stringable
         assert($interval->s === 0 && $interval->i === 0, "Task duration is not a multiple of 1 hour");
 
         return $interval->h;
+    }
+
+    /**
+     * The end of a period is, by domain definition, always excluded.
+     */
+    public function getPeriod(): Period
+    {
+        return Period::make($this->getStart(), $this->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
     }
 }

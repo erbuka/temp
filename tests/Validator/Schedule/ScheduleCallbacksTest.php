@@ -182,7 +182,7 @@ class ScheduleCallbacksTest extends ConstraintValidatorTestCase
         $manager = new ScheduleManager($schedule);
 
         $fixtures = [
-            '1' => [$manager, $manager->getSchedule(), $cs]
+            '1' => [$manager, $schedule, $cs]
         ];
 
         return $fixtures;

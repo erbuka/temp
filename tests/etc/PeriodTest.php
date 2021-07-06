@@ -1,7 +1,7 @@
 <?php
 
 
-namespace App\Tests;
+namespace App\Tests\etc;
 
 
 use PHPUnit\Framework\TestCase;

@@ -7,6 +7,7 @@ namespace App;
 use App\Entity\AddTaskCommand;
 use App\Entity\Consultant;
 use App\Entity\ContractedService;
+use App\Entity\MoveTaskCommand;
 use App\Entity\RemoveTaskCommand;
 use App\Entity\Schedule;
 use App\Entity\ScheduleChangeset;
@@ -36,7 +37,6 @@ class ScheduleManager implements ScheduleInterface
     private Schedule $schedule;
     protected ?WorkflowInterface $taskWorkflow;
     private ScheduleChangeset $changeset;
-    private Period $period;
 
     //region Indices
     private \SplFixedArray $slots; // NOTA BENE: this is shared (by ref) with Schedule.slots
@@ -63,14 +63,7 @@ class ScheduleManager implements ScheduleInterface
         $this->schedule = $schedule;
         $this->taskWorkflow = $taskWorkflow;
 
-        $this->period = Period::make($schedule->getFrom(), $schedule->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END());
-
         $this->reloadTasks();
-    }
-
-    public function getSchedule(): ScheduleInterface
-    {
-        return $this->schedule;
     }
 
     private function initializeChangeset(): void
@@ -86,7 +79,7 @@ class ScheduleManager implements ScheduleInterface
         $slotsMap = [];
         $byDay = [];
 
-        foreach ($this->period as $dayHash) {
+        foreach (Period::make($this->schedule->getFrom(), $this->schedule->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END()) as $dayHash) {
             /** @var \DateTimeImmutable $dayHash */
 
             if (AppAssert\NotItalianHolidayValidator::isItalianHoliday($dayHash, includePrefestivi: true)) {
@@ -161,13 +154,8 @@ class ScheduleManager implements ScheduleInterface
         $tasks = $this->schedule->getTasks()->matching(ScheduleRepository::createTasksSortedByStartCriteria());
         foreach ($tasks as $task) {
             /** @var Task $task */
-            $this->loadTaskIntoSlots($task);
+            $this->addTaskIntoIndices($task);
         }
-    }
-
-    public function getTasksByConsultant(): \SplObjectStorage
-    {
-        return clone $this->tasksByConsultant;
     }
 
     /**
@@ -180,98 +168,6 @@ class ScheduleManager implements ScheduleInterface
             return [];
 
         return iterator_to_array($this->tasksByConsultant[$consultant]);
-    }
-
-    /**
-     * TODO remove task from other slots, requires taskToSlotsMap
-     * @param Task $task
-     */
-    protected function loadTaskIntoSlots(Task $task)
-    {
-        $this->addTaskIntoIndices($task);
-    }
-
-    /**
-     * Do not use cached results.
-     *
-     * @return string
-     */
-    public function getStats(): string
-    {
-        $allocatedSlots = 0;
-        $freeSlots = 0;
-//        $slotsCount = $this->slots->getSize(); // ::count() and count() are equivalent to ::getSize()
-        $allocatedTasks = new \SplObjectStorage(); // Task => count of slots in which the task is included
-        $taskHours = 0;
-        $taskHoursOnPremises = 0;
-
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            if ($slot->isAllocated())
-                $allocatedSlots++;
-            else
-                $freeSlots++;
-
-            foreach ($slot->getTasks() as $task) {
-                /** @var Task $task */
-                if (!$allocatedTasks->contains($allocatedTasks))
-                    $allocatedTasks->attach($task, 1);
-                else
-                    $allocatedTasks[$task] += 1;
-
-                $taskHours += 1;
-                $taskHoursOnPremises += $task->isOnPremises() ? 1 : 0;
-            }
-        }
-        assert($freeSlots + $allocatedSlots === count($this->slots), "free=$freeSlots + allocated=$allocatedSlots !== count={$this->slots->count()}");
-        assert(count($allocatedTasks) === $this->schedule->getTasks()->count(), "Task count doesnt match");
-
-        return sprintf("id=%s period=%s consultants=%d | slots=%d free=%d | tasks=%d hours=%d onpremises=%d",
-            $this->id ?? $this->schedule->getUuid()->toRfc4122(),
-            $this->period->asString(),
-            count($this->tasksByConsultant),
-            count($this->slots),
-            $freeSlots,
-            count($allocatedTasks),
-            $taskHours,
-            $taskHoursOnPremises,
-        );
-    }
-
-    public function computeConsultantHours(): int
-    {
-        $total = 0;
-        $onPremises = 0;
-        foreach ($this->tasksByConsultant as $consultant) {
-            /** @var Consultant $consultant */
-
-            foreach ($this->tasksByConsultant[$consultant] as $task) {
-                /** @var Task $task */
-                $taskHours = $task->getHours();
-
-                $total += $taskHours;
-                if ($task->isOnPremises())
-                    $onPremises += $taskHours;
-            }
-        }
-
-        return $total;
-    }
-
-    public function getConsultantHours(Consultant $consultant): int
-    {
-        if (!isset($this->consultantHours[$consultant]))
-            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
-
-        return $this->consultantHours[$consultant];
-    }
-
-    public function getConsultantHoursOnPremises(Consultant $consultant): int
-    {
-        if (!isset($this->consultantHoursOnPremises[$consultant]))
-            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
-
-        return $this->consultantHoursOnPremises[$consultant];
     }
 
     /**
@@ -596,6 +492,16 @@ class ScheduleManager implements ScheduleInterface
         return $this->slotsByDayHours[$hash];
     }
 
+    private function getSlotFromDateTime(\DateTimeInterface $dateTime): ?Slot
+    {
+        $dayHourHash = static::getDayHourHash($dateTime);
+
+        if (!isset($this->slotsByDayHours[$dayHourHash]))
+            return null;
+
+        return $this->slotsByDayHours[$dayHourHash];
+    }
+
     private function getPeriodEndSlot(Period $period): Slot
     {
         $end = $period->includedEnd();
@@ -862,29 +768,8 @@ class ScheduleManager implements ScheduleInterface
         }
     }
 
-    public function countSlotsAllocatedToContractedService(ContractedService $cs): int
-    {
-        $count = 0;
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            if ($slot->isAllocatedToContractedService($cs))
-                $count++;
-        }
 
-        return $count;
-    }
 
-    public function countOnPremisesSlotsAllocatedToContractedService(ContractedService $cs): int
-    {
-        $count = 0;
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            if ($slot->isAllocatedOnPremisesToContractedService($cs))
-                $count++;
-        }
-
-        return $count;
-    }
 
 
     //region Commands API
@@ -897,7 +782,7 @@ class ScheduleManager implements ScheduleInterface
             $command->execute();
             $this->changeset->addCommand($command);
 
-            $this->loadTaskIntoSlots($task);
+            $this->addTaskIntoIndices($task);
         }
 
         return $this;
@@ -917,12 +802,59 @@ class ScheduleManager implements ScheduleInterface
         return $this;
     }
 
-    public function moveTask(Task $task): static
+    /**
+     * Slots in the given interval must be free.
+     */
+    public function moveTask(Task $task, Period $period): static
     {
+        if (!$this->containsTask($task))
+            throw new \InvalidArgumentException("Task {$task} does not belong to schedule {$this->schedule}");
 
+        if (!$period->precision()->equals(Precision::HOUR()))
+            throw new \InvalidArgumentException("Period precision '{$period->precision()->intervalName()}' does not match Precision::HOUR()");
+
+        $newStartSlot = $this->getSlotFromDateTime($period->includedStart());
+        $newEndSlot = $this->getSlotFromDateTime($period->includedEnd());
+
+        // Period must be within schedule boundaries
+        if (!$newStartSlot || !$newEndSlot)
+            throw new \InvalidArgumentException("Period {$period->asString()} is outside schedule period {$this->getSchedulePeriod()->asString()}: unable to find lookup slots");
+
+        // Target slots must be free
+        for ($i = $newStartSlot->getIndex(); $i <= $newEndSlot->getIndex(); $i++) {
+            /** @var Slot $slot */
+            $slot = $this->slots[$i];
+
+            if (!$slot->isFree())
+                throw new \LogicException("Cannot must task {$task} to period {$period->asString()} because the slots are not free");
+        }
+
+        // Remove task from indices
+        $this->removeTaskFromIndices($task);
+
+        // Update task period
+        $cmd = new MoveTaskCommand($this->schedule, $task,
+            start: $period->includedStart(),
+            end: $period->includedEnd()->add(new \DateInterval('PT1H'))
+        );
+        $cmd->execute();
+        $this->changeset->addCommand($cmd);
+
+        // Reindex the updated task
+        $this->addTaskIntoIndices($task);
+
+        return $this;
     }
 
     //endregion Commands
+
+    protected function getSchedulePeriod(Precision $precision = null): Period
+    {
+        if (!$precision)
+            $precision = Precision::HOUR();
+
+        return Period::make($this->schedule->getFrom(), $this->schedule->getTo(), $precision, Boundaries::EXCLUDE_END());
+    }
 
     /**
      * Shadows the underlying collection to prevent modification outside of manager methods.
@@ -986,7 +918,7 @@ class ScheduleManager implements ScheduleInterface
         return $loaded;
     }
 
-    public static function getDayHash(mixed $o): int
+    protected static function getDayHash(mixed $o): int
     {
         if ($o instanceof Slot)
             return (int)$o->getStart()->format(static::DATE_DAYHASH);
@@ -998,7 +930,7 @@ class ScheduleManager implements ScheduleInterface
         throw new \InvalidArgumentException("Object of type ". $o::class ."not supported");
     }
 
-    public static function getDayHourHash(mixed $o): int
+    protected static function getDayHourHash(mixed $o): int
     {
         if ($o instanceof Slot)
             return (int)$o->getStart()->format(static::DATE_HOURHASH);
@@ -1028,7 +960,7 @@ class ScheduleManager implements ScheduleInterface
             $key = static::getDayHourHash($hour);
 
             if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->schedule->getPeriod()->asString()}");
 
             assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
 
@@ -1066,7 +998,7 @@ class ScheduleManager implements ScheduleInterface
         foreach ($period as $hour) {
             $key = static::getDayHourHash($hour);
             if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->period->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->schedule->getPeriod()->asString()}");
 
             $slot = $this->slotsByDayHours[$key];
             $slot->removeTask($task);
@@ -1225,4 +1157,117 @@ class ScheduleManager implements ScheduleInterface
     }
 
     //endregion Validation callbacks
+
+    //region Metrics
+
+    /**
+     * Do not use cached results.
+     *
+     * @return string
+     */
+    public function getStats(): string
+    {
+        $allocatedSlots = 0;
+        $freeSlots = 0;
+//        $slotsCount = $this->slots->getSize(); // ::count() and count() are equivalent to ::getSize()
+        $allocatedTasks = new \SplObjectStorage(); // Task => count of slots in which the task is included
+        $taskHours = 0;
+        $taskHoursOnPremises = 0;
+
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocated())
+                $allocatedSlots++;
+            else
+                $freeSlots++;
+
+            foreach ($slot->getTasks() as $task) {
+                /** @var Task $task */
+                if (!$allocatedTasks->contains($allocatedTasks))
+                    $allocatedTasks->attach($task, 1);
+                else
+                    $allocatedTasks[$task] += 1;
+
+                $taskHours += 1;
+                $taskHoursOnPremises += $task->isOnPremises() ? 1 : 0;
+            }
+        }
+        assert($freeSlots + $allocatedSlots === count($this->slots), "free=$freeSlots + allocated=$allocatedSlots !== count={$this->slots->count()}");
+        assert(count($allocatedTasks) === $this->schedule->getTasks()->count(), "Task count doesnt match");
+
+        return sprintf("id=%s period=%s consultants=%d | slots=%d free=%d | tasks=%d hours=%d onpremises=%d",
+            $this->id ?? $this->schedule->getUuid()->toRfc4122(),
+            $this->schedule->getPeriod()->asString(),
+            count($this->tasksByConsultant),
+            count($this->slots),
+            $freeSlots,
+            count($allocatedTasks),
+            $taskHours,
+            $taskHoursOnPremises,
+        );
+    }
+
+
+    public function computeConsultantHours(): int
+    {
+        $total = 0;
+        $onPremises = 0;
+        foreach ($this->tasksByConsultant as $consultant) {
+            /** @var Consultant $consultant */
+
+            foreach ($this->tasksByConsultant[$consultant] as $task) {
+                /** @var Task $task */
+                $taskHours = $task->getHours();
+
+                $total += $taskHours;
+                if ($task->isOnPremises())
+                    $onPremises += $taskHours;
+            }
+        }
+
+        return $total;
+    }
+
+    public function countOnPremisesSlotsAllocatedToContractedService(ContractedService $cs): int
+    {
+        $count = 0;
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocatedOnPremisesToContractedService($cs))
+                $count++;
+        }
+
+        return $count;
+    }
+
+    public function getConsultantHours(Consultant $consultant): int
+    {
+        if (!isset($this->consultantHours[$consultant]))
+            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
+
+        return $this->consultantHours[$consultant];
+    }
+
+    public function getConsultantHoursOnPremises(Consultant $consultant): int
+    {
+        if (!isset($this->consultantHoursOnPremises[$consultant]))
+            throw new \InvalidArgumentException("Consultant {$consultant} does not exist in schedule {$this->schedule}");
+
+        return $this->consultantHoursOnPremises[$consultant];
+    }
+
+
+    public function countSlotsAllocatedToContractedService(ContractedService $cs): int
+    {
+        $count = 0;
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            if ($slot->isAllocatedToContractedService($cs))
+                $count++;
+        }
+
+        return $count;
+    }
+
+    //endregion Metrics
 }
