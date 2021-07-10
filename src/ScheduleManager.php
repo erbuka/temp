@@ -25,6 +25,7 @@ use Symfony\Component\Workflow\WorkflowInterface;
 
 class ScheduleManager implements ScheduleInterface
 {
+    const SLOT_INTERVAL = 3600; // seconds
     const DATE_NOTIME = 'Y-m-d';
     const DATE_HOURHASH = 'YmdH';
     const DATE_DAYHASH = 'Ymd';
@@ -40,9 +41,9 @@ class ScheduleManager implements ScheduleInterface
 
     //region Indices
     private \SplFixedArray $slots; // NOTA BENE: this is shared (by ref) with Schedule.slots
-    /** @var array<string, Slot> e.g. '2021020318' => Slot */
+    /** @var array<string, Slot> e.g. '2021020318' => Slot. Sorted by time ASC */
     private array $slotsByDayHours;
-    /** @var array<string, Slot[]> e.g. '20210203' => Slot */
+    /** @var array<string, Slot[]> e.g. '20210203' => Slot . Sorted by time ASC */
     private array $slotsByDay;
     /** @var \SplObjectStorage<Consultant, \SplObjectStorage>  */
     private \SplObjectStorage $tasksByConsultant;
@@ -71,70 +72,8 @@ class ScheduleManager implements ScheduleInterface
         $this->changeset = new ScheduleChangeset($this->schedule);
     }
 
-    private function generateSlots()
-    {
-        assert(!isset($this->slots), "Refusing to overwrite existing slots in Schedule");
 
-        $eligibleDays = [];
-        $slotsMap = [];
-        $byDay = [];
 
-        foreach (Period::make($this->schedule->getFrom(), $this->schedule->getTo(), Precision::DAY(), Boundaries::EXCLUDE_END()) as $dayHash) {
-            /** @var \DateTimeImmutable $dayHash */
-
-            if (AppAssert\NotItalianHolidayValidator::isItalianHoliday($dayHash, includePrefestivi: true)) {
-//                $this->output->writeln(sprintf('- %s skipped because it is an holiday', $date->format(self::DATE_NOTIME)));
-                continue;
-            }
-
-            if (in_array($weekday = $dayHash->format('w'), [6,0])) {
-//                $this->output->writeln(sprintf('- %2$s skipped because it is %1$s', $weekday == 6 ? 'Saturday' : 'Sunday', $date->format(self::DATE_NOTIME)));
-                continue;
-            }
-
-            $dayStart = \DateTime::createFromImmutable($dayHash);
-            $dayStart->setTime(8, 0);
-            $dayEnd = (clone $dayStart)->setTime(18, 0);
-
-            $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
-            foreach ($businessHours as $hour) {
-                /** @var \DateTimeImmutable $hour */
-                $slot = new Slot(count($eligibleDays), $hour);
-                $hash = static::getDayHourHash($slot);
-                $dayHash = static::getDayHash($slot);
-                assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
-
-                $slotsMap[$hash] = $slot;
-                $eligibleDays[] = $slot;
-
-                if (!isset($byDay[$dayHash])) $byDay[$dayHash] = [];
-                array_push($byDay[$dayHash], $slot);
-
-                assert($slot->getIndex() === array_search($slot, $eligibleDays, strict: true));
-            }
-        }
-
-        $this->setSlots(\SplFixedArray::fromArray($eligibleDays));
-        $this->slotsByDayHours = $slotsMap;
-        $this->slotsByDay = $byDay;
-
-    }
-
-    private function setSlots(\SplFixedArray $slots): void
-    {
-        $this->slots = $slots;
-    }
-
-    /**
-     * N.B. must not remove tasks!
-     */
-    private function clearSlots(): void
-    {
-        foreach ($this->slots as $slot) {
-            /** @var Slot $slot */
-            $slot->empty();
-        }
-    }
 
     /**
      * This is called by the factory to ensure the manager is in sync with the actual schedule tasks.
@@ -218,7 +157,7 @@ class ScheduleManager implements ScheduleInterface
 
         try {
             $slot = $this->getClosestFreeSlot($slot, period: $period, direction: match (rand(0, 1)){ 0 => 'before', 1 => 'after' });
-        } catch (NoSlotsAvailableException $e) {
+        } catch (NoMatchingSlotsAvailableException $e) {
             $slot = $this->getClosestFreeSlot($slot, period: $period);
         }
 
@@ -281,7 +220,7 @@ class ScheduleManager implements ScheduleInterface
     }
 
     /**
-     * May return more slots than $preferred, in which case it is up to the caller to chose how many slots to use.
+     * May return more slots than $min and $preferred, in which case it is up to the caller to chose how many slots to use.
      *
      * PROBLEM: period is enforced with hourly precision, that is if the random picked slot is >= $min in a day that has more than 1 adjacent slots free,
      * the picked slot is returned because it >= $min and belongs to the day.
@@ -293,9 +232,12 @@ class ScheduleManager implements ScheduleInterface
     {
         if ($min < 1 || $preferred < 1)
             throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
-
-        if (!$period)
-            $period = $this->getSchedulePeriod();
+//        if ($period->precision()->equals(Precision::DAY()))
+//            $period = Period::make(
+//                reset($this->slotsByDay[static::getDayHash($period->includedStart())])->getStart(),
+//                end($this->slotsByDay[static::getDayHash($period->includedEnd()])->getEnd(),
+//                Precision::HOUR(), Boundaries::EXCLUDE_END()
+//            );
 
         assert($this->getSchedulePeriod()->contains($period));
 
@@ -304,9 +246,14 @@ class ScheduleManager implements ScheduleInterface
         $beforeIndex = $this->getPeriodEndSlot($period)->getIndex(); // Included
 
         /** @var Slot[] $slots */
-        $initialSlot = $this->getRandomFreeSlot($period);
-        if (!$initialSlot)
-            throw new NoSlotsAvailableException("period={$period->asString()}");
+        try {
+            $initialSlot = $this->getRandomFreeSlot($period);
+        } catch (NoMatchingSlotsAvailableException $e) {
+            throw $e;
+        }
+
+        if (!$initialSlot) throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
+        assert($initialSlot->getIndex() >= $afterIndex && $initialSlot->getIndex() <= $beforeIndex);
 
         /** @var Slot[] $closestAfter */
         /** @var Slot[] $closestBefore */
@@ -314,17 +261,27 @@ class ScheduleManager implements ScheduleInterface
         $closestAfterDistance = $closestBeforeDistance = INF;
 
         // find closest afterwards, including given slot
+        // Sets initial slot fo the earliest slot in the day
         $initialSlot = reset($this->slotsByDay[static::getDayHash($initialSlot)]);
         $adjacentSlots = [];
         $dayAdjacentSlots = [];
-        $prevDay = null;
         for ($idx = $initialSlot->getIndex(); $idx <= $beforeIndex; $idx++) {
             // First iteration is the initial slot
             /** @var Slot $slot */
             $slot = $this->slots[$idx];
 
-            // If new day, then decide whether to return found adjacent slots or keep going
-            if (($dayHash = static::getDayHash($slot)) !== $prevDay) {
+            if ($slot->isFree())
+                $adjacentSlots[] = $slot;
+            else {
+                // Store adjacent slot in current day
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                $adjacentSlots = [];
+            }
+
+            // Lookahead: if new day or last slot, then decide whether to return found adjacent slots or keep going
+            if ($idx === $beforeIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx+1])) {
                 if (count($adjacentSlots) >= $min)
                     $dayAdjacentSlots[] = $adjacentSlots;
 
@@ -351,9 +308,19 @@ class ScheduleManager implements ScheduleInterface
                 // Resets structures on new day
                 $adjacentSlots = [];
                 $dayAdjacentSlots = [];
-                $prevDay = $dayHash;
             }
+        }
 
+        // Find closest earlier, including given slot
+//        if (isset($this->slots[$initialSlot->getIndex() - 1]))
+//            $initialSlot = $this->slots[$initialSlot->getIndex() - 1]; // Start from last slot of previous day
+
+        $adjacentSlots = [];
+        $dayAdjacentSlots = [];
+        for ($idx = $initialSlot->getIndex(); $idx >= $afterIndex; $idx--) {
+            // First iteration is the initial slot
+            /** @var Slot $slot */
+            $slot = $this->slots[$idx];
 
             if ($slot->isFree())
                 $adjacentSlots[] = $slot;
@@ -364,22 +331,9 @@ class ScheduleManager implements ScheduleInterface
 
                 $adjacentSlots = [];
             }
-        }
 
-        // Find closest earlier, including given slot
-        if (isset($this->slots[$initialSlot->getIndex() - 1]))
-            $initialSlot = $this->slots[$initialSlot->getIndex() - 1]; // Start from last slot of previous day
-
-        $adjacentSlots = [];
-        $dayAdjacentSlots = [];
-        $prevDay = null;
-        for ($idx = $initialSlot->getIndex(); $idx >= $afterIndex; $idx--) {
-            // First iteration is the initial slot
-            /** @var Slot $slot */
-            $slot = $this->slots[$idx];
-
-            // If new day, then decide whether to return found adjacent slots or keep going
-            if (($dayHash = static::getDayHash($slot)) !== $prevDay) {
+            // Lookahead: If new day, then decide whether to return found adjacent slots or keep going
+            if ($idx === $afterIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx-1])) {
                 if (count($adjacentSlots) >= $min)
                     $dayAdjacentSlots[] = $adjacentSlots;
 
@@ -399,7 +353,8 @@ class ScheduleManager implements ScheduleInterface
 
                     assert(isset($largest));
                     $closestBefore = $largest;
-                    usort($closestBefore, fn($s1, $s2) => $s1->getStart() <=> $s2->getStart());
+                    $closestBefore = array_reverse($closestBefore, false);
+//                    usort($closestBefore, fn($s1, $s2) => $s1->getStart() <=> $s2->getStart());
                     $closestBeforeDistance = end($closestBefore)->getIndex() - $initialSlot->getIndex();
                     break;
                 }
@@ -407,22 +362,12 @@ class ScheduleManager implements ScheduleInterface
                 // Resets structures on new day
                 $adjacentSlots = [];
                 $dayAdjacentSlots = [];
-                $prevDay = $dayHash;
             }
 
-            if ($slot->isFree())
-                $adjacentSlots[] = $slot;
-            else {
-                // Store adjacent slot in current day
-                if (count($adjacentSlots) >= $min)
-                    $dayAdjacentSlots[] = $adjacentSlots;
-
-                $adjacentSlots = [];
-            }
         }
 
         if (!$closestAfter && !$closestBefore)
-            throw new NoSlotsAvailableException("No free slots available in period {$period->asString()}");
+            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
 
         // Both found and equally distant
         if ($closestBeforeDistance === $closestAfterDistance && $closestBefore && $closestAfter)
@@ -448,10 +393,14 @@ class ScheduleManager implements ScheduleInterface
         if ($min < 1 || $preferred < 1 || $preferred < $min)
             throw new \InvalidArgumentException(__METHOD__ ." $min < 1 || $preferred < 1 || $preferred < $min");
 
+        if ($this->containsTask($task)) {
+            throw new \InvalidArgumentException("Task {$task} already allocated");
+        }
+
         $slots = $this->getRandomFreeAdjacentSameDaySlots($min, $preferred, $period);
 
         if (count($slots) < $min)
-            throw new NoSlotsAvailableException("Period={$period->asString()} min={$min} preferred={$preferred}");
+            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
 
         $end = $slots[0]->getEnd();
         $allocated = 1;
@@ -476,13 +425,38 @@ class ScheduleManager implements ScheduleInterface
         return $allocated;
     }
 
+    /**
+     * Moves a task into a random set of adjacent *free* blocks within the given period.
+     * throw if no set of adjacent blocks are available.
+     *
+     * Adjacent slots are randomly selected within the given period.
+     *
+     * @param Task $task
+     * @param Period $period
+     */
+    public function reallocateTaskToSameDayAdjacentSlots(Task $task, Period $period)
+    {
+        if ($period->contains($task->getPeriod()))
+            throw new \InvalidArgumentException("Given period {$period->asString()} must not include the task {$task}");
+
+        $slots = $this->getRandomFreeAdjacentSameDaySlots(min: $task->getHours(), period: $period);
+        assert(count($slots) >= $task->getHours());
+        assert(empty(array_filter($slots, fn($slot) => $slot->isAllocated())), "Returned slots are not empty");
+
+        $this->moveTask($task, Period::make(
+            reset($slots)->getStart(),
+            end($slots)->getEnd(),
+            Precision::HOUR(), Boundaries::EXCLUDE_END())
+        );
+    }
+
     //endregion Allocation API
 
     private function getPeriodStartSlot(Period $period): Slot
     {
         $start = $period->includedStart();
 
-        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($start)])) {
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($start)]) && $start < end($this->slotsByDayHours)->getEnd()) {
             $start = $start->modify('+1 hour');
 
             if ($period->endsBefore($start))
@@ -506,7 +480,7 @@ class ScheduleManager implements ScheduleInterface
     {
         $end = $period->includedEnd();
 
-        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($end)])) {
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($end)]) && $end >= reset($this->slotsByDayHours)->getStart()) {
             $end = $end->modify('-1 hour');
 
             if ($period->startsAfter($end))
@@ -518,7 +492,7 @@ class ScheduleManager implements ScheduleInterface
 
     /**
      * Closest does not mean adjacent or in the same day.
-     * @throws NoSlotsAvailableException
+     * @throws NoFreeSlotsAvailableException
      */
     protected function getClosestFreeSlot(Slot $slot, Period $period = null, string $direction = 'both'): Slot
     {
@@ -569,7 +543,7 @@ class ScheduleManager implements ScheduleInterface
 
         // None found, out of free slots
         if (!$closestBefore && !$closestAfter) {
-            throw new NoSlotsAvailableException("No free slots available on schedule {$this->schedule} period={$period->asString()}". $this->getStats());
+            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
         }
 
         // Both found and equally distant
@@ -813,8 +787,15 @@ class ScheduleManager implements ScheduleInterface
         if (!$period->precision()->equals(Precision::HOUR()))
             throw new \InvalidArgumentException("Period precision '{$period->precision()->intervalName()}' does not match Precision::HOUR()");
 
-        $newStartSlot = $this->getSlotFromDateTime($period->includedStart());
-        $newEndSlot = $this->getSlotFromDateTime($period->includedEnd());
+        if (!$this->isPeriodSameDay($period))
+            throw new \InvalidArgumentException("Period {$period->asString()} must not spawn multiple days");
+
+        $periodDayHash = static::getDayHourHash($period->includedStart());
+        if (!isset($this->slotsByDayHours[$periodDayHash]))
+            throw new \InvalidArgumentException("Period {$period->asString()} is outside schedule boundaries or on a holiday");
+
+        $newStartSlot = $this->slotsByDayHours[static::getDayHourHash($period->includedStart())];
+        $newEndSlot = $this->slotsByDayHours[static::getDayHourHash($period->includedEnd())];
 
         // Period must be within schedule boundaries
         if (!$newStartSlot || !$newEndSlot)
@@ -848,6 +829,8 @@ class ScheduleManager implements ScheduleInterface
 
     //endregion Commands
 
+
+
     public function getSchedulePeriod(Precision $precision = null): Period
     {
         if (!$precision)
@@ -867,14 +850,20 @@ class ScheduleManager implements ScheduleInterface
         return new ArrayCollection($this->schedule->getTasks()->toArray());
     }
 
-    public function getFrom(): \DateTimeInterface
+    /**
+     * Returns the starting datetime of the schedule ceiled to the beginning of the first slot.
+     */
+    public function getFrom(): \DateTimeImmutable
     {
-        return $this->schedule->getFrom();
+        return $this->slots[0]->getStart();
     }
 
-    public function getTo(): \DateTimeInterface
+    /**
+     * Returns the schedule's ending datetime floored to the end of the last slot.
+     */
+    public function getTo(): \DateTimeImmutable
     {
-        return $this->schedule->getTo();
+        return end($this->slots)->getEnd(); // excluded end
     }
 
     public function containsTask(Task $task): bool
@@ -918,30 +907,6 @@ class ScheduleManager implements ScheduleInterface
         return $loaded;
     }
 
-    protected static function getDayHash(mixed $o): int
-    {
-        if ($o instanceof Slot)
-            return (int)$o->getStart()->format(static::DATE_DAYHASH);
-        if ($o instanceof Task)
-            return (int)$o->getStart()->format(static::DATE_DAYHASH);
-        if ($o instanceof \DateTimeInterface)
-            return (int)$o->format(static::DATE_DAYHASH);
-
-        throw new \InvalidArgumentException("Object of type ". $o::class ."not supported");
-    }
-
-    protected static function getDayHourHash(mixed $o): int
-    {
-        if ($o instanceof Slot)
-            return (int)$o->getStart()->format(static::DATE_HOURHASH);
-        if ($o instanceof Task)
-            return (int)$o->getStart()->format(static::DATE_HOURHASH);
-        if ($o instanceof \DateTimeInterface)
-            return (int)$o->format(static::DATE_HOURHASH);
-
-        throw new \InvalidArgumentException("Object of type ".$o::class."not supported");
-    }
-
     public function getScheduleChangeset(): ScheduleChangeset
     {
         return $this->changeset;
@@ -960,7 +925,7 @@ class ScheduleManager implements ScheduleInterface
             $key = static::getDayHourHash($hour);
 
             if (!isset($this->slotsByDayHours[$key]))
-                throw new \RuntimeException("Task {$period->asString()} is outside this schedule boundaries {$this->getSchedulePeriod()->asString()}");
+                throw new \RuntimeException("Task {$period->asString()} is either a holiday or outside this schedule boundaries {$this->getSchedulePeriod()->asString()}");
 
             assert($this->slotsByDayHours[$key] instanceof Slot, "Map does not return a slot");
 
@@ -1032,6 +997,70 @@ class ScheduleManager implements ScheduleInterface
         $this->tasksByConsultant = new \SplObjectStorage();
         $this->consultantHours = new \SplObjectStorage();
         $this->consultantHoursOnPremises = new \SplObjectStorage();
+    }
+
+    private function generateSlots()
+    {
+        assert(!isset($this->slots), "Refusing to overwrite existing slots in Schedule");
+
+        $from = $this->schedule->getFrom();
+        $to = $this->schedule->getTo()->modify('-1hour'); // 14:30 results in the 14:00 slot being the last generated
+
+        $eligibleDays = [];
+        $slotsMap = [];
+        $byDay = [];
+        foreach (Period::make($from, $to, Precision::DAY(), Boundaries::EXCLUDE_NONE()) as $day) {
+            /** @var \DateTimeImmutable $day */
+
+            if (AppAssert\NotItalianHolidayValidator::isItalianHoliday($day, includePrefestivi: true)) {
+//                $this->output->writeln(sprintf('- %s skipped because it is an holiday', $date->format(self::DATE_NOTIME)));
+                continue;
+            }
+
+            if (in_array($weekday = $day->format('w'), [6,0])) {
+//                $this->output->writeln(sprintf('- %2$s skipped because it is %1$s', $weekday == 6 ? 'Saturday' : 'Sunday', $date->format(self::DATE_NOTIME)));
+                continue;
+            }
+
+            $dayStart = $day->setTime(8, 0);
+            $dayEnd = $day->setTime(18, 0);
+
+            $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
+            foreach ($businessHours as $hour) {
+                /** @var \DateTimeImmutable $hour */
+                if ($hour < $from || $hour > $to)
+                    continue;
+
+                $slot = new Slot(count($eligibleDays), $hour);
+                $hash = static::getDayHourHash($slot);
+                $dayHash = static::getDayHash($slot);
+                assert(!isset($slotsMap[$hash]), "Multiple slots have the same hash {$hash}");
+
+                $slotsMap[$hash] = $slot;
+                $eligibleDays[] = $slot;
+
+                if (!isset($byDay[$dayHash])) $byDay[$dayHash] = [];
+                array_push($byDay[$dayHash], $slot);
+
+                assert($slot->getIndex() === array_search($slot, $eligibleDays, strict: true));
+            }
+        }
+
+        $this->slots = \SplFixedArray::fromArray($eligibleDays);
+        $this->slotsByDayHours = $slotsMap;
+        $this->slotsByDay = $byDay;
+
+    }
+
+    /**
+     * N.B. must not remove tasks!
+     */
+    private function clearSlots(): void
+    {
+        foreach ($this->slots as $slot) {
+            /** @var Slot $slot */
+            $slot->empty();
+        }
     }
 
     //endregion Indices operations
@@ -1270,4 +1299,89 @@ class ScheduleManager implements ScheduleInterface
     }
 
     //endregion Metrics
+
+    //region DateTime utils
+
+    public static function ceilDateTimeToSlots(\DateTimeInterface $dateTime): \DateTimeImmutable
+    {
+        $timestamp = (int)ceil($dateTime->getTimestamp() / static::SLOT_INTERVAL) * static::SLOT_INTERVAL;
+        $d = \DateTimeImmutable::createFromFormat('U', (string)$timestamp);
+
+        return $d;
+    }
+
+    public static function floorDateTimeToSlotsInterval(\DateTimeInterface $dateTime): \DateTimeImmutable
+    {
+        $timestamp = (int)floor($dateTime->getTimestamp() / static::SLOT_INTERVAL) * static::SLOT_INTERVAL;
+        $d = \DateTimeImmutable::createFromFormat('U', (string)$timestamp);
+
+        return $d;
+    }
+
+    /**
+     * Shrinks given boundaries to fit within the schedule period.
+     * $after is ceiled to the next exact hour (H+1:00:00).
+     * $before is floored to the current exact hour (H:00:00).
+     */
+    public function createFittedPeriodFromBoundaries(\DateTimeInterface $after, \DateTimeInterface $before): Period
+    {
+        if ($after > $before)
+            throw new \InvalidArgumentException("after={$after->format(DATE_RFC3339)} > before={$before->format(DATE_RFC3339)}");
+
+        $interval = new \DateInterval('PT1H');
+        $after = \DateTime::createFromImmutable(static::ceilDateTimeToSlots($after));
+        $before = \DateTime::createFromImmutable(static::floorDateTimeToSlotsInterval($before))->sub($interval);
+        $firstSlot = reset($this->slotsByDayHours);
+        $lastLost = end($this->slotsByDayHours);
+
+        while (!($afterSlot = $this->getSlotFromDateTime($after)) && $after < $lastLost->getEnd()) {
+            $after->add($interval);
+        }
+        if (!isset($afterSlot))
+            throw new \InvalidArgumentException("Period [{$after->format(DATE_ATOM)} {$before->format(DATE_ATOM)}] does not overlap schedule period {$this->getSchedulePeriod()->asString()}");
+
+        // Not easy to explain, but $before > $firstSlot is needed for the edge case where $before < $from to avoid infinite ::sub()
+        while (!($beforeSlot = $this->getSlotFromDateTime($before)) && $before > $firstSlot->getStart()) {
+            $before->sub($interval);
+        }
+        if (!isset($beforeSlot))
+            throw new \InvalidArgumentException("Period [{$after->format(DATE_ATOM)} {$before->format(DATE_ATOM)}] does not overlap schedule period {$this->getSchedulePeriod()->asString()}");
+
+        if ($before->getTimestamp() - $after->getTimestamp() < 3600) {
+            throw new \RuntimeException("Given period is less than 1 hour");
+        }
+
+        return Period::make($afterSlot->getStart(), $beforeSlot->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
+    }
+
+    protected static function getDayHash(mixed $o): int
+    {
+        if ($o instanceof Slot)
+            return (int)$o->getStart()->format(static::DATE_DAYHASH);
+        if ($o instanceof Task)
+            return (int)$o->getStart()->format(static::DATE_DAYHASH);
+        if ($o instanceof \DateTimeInterface)
+            return (int)$o->format(static::DATE_DAYHASH);
+
+        throw new \InvalidArgumentException("Object of type ". $o::class ."not supported");
+    }
+
+    protected static function getDayHourHash(mixed $o): int
+    {
+        if ($o instanceof Slot)
+            return (int)$o->getStart()->format(static::DATE_HOURHASH);
+        if ($o instanceof Task)
+            return (int)$o->getStart()->format(static::DATE_HOURHASH);
+        if ($o instanceof \DateTimeInterface)
+            return (int)$o->format(static::DATE_HOURHASH);
+
+        throw new \InvalidArgumentException("Object of type ".$o::class."not supported");
+    }
+
+    protected function isPeriodSameDay(Period $period): bool
+    {
+        return $period->end()->diff($period->start())->days === 0;
+    }
+
+    //endregion DateTime utils
 }

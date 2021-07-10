@@ -28,7 +28,9 @@ class Contract
     private Recipient $recipient;
 
     /**
-     * @ORM\OneToMany(targetEntity=ContractedService::class, mappedBy="contract", orphanRemoval=true)
+     * Orphan removal is disabled because the task is referenced by multiple entities (Task)
+     *
+     * @ORM\OneToMany(targetEntity=ContractedService::class, mappedBy="contract", cascade={"persist"})
      */
     private Collection $contractedServices;
 

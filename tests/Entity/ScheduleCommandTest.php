@@ -98,7 +98,6 @@ class ScheduleCommandTest extends KernelTestCase
 
     public function emptyScheduleAndContractedServiceProvider() {
         $schedule = new Schedule($from = new \DateTimeImmutable('2021-07-15'), $from->modify('+12 month'));
-//        $manager = static::getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
         $cs = (new ContractedService())
             ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
             ->setConsultant((new Consultant())->setName('Cugusi Mario'))

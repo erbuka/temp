@@ -80,7 +80,7 @@ class Slot implements \Stringable
         return $this->period;
     }
 
-    #[Pure] public function getStart(): \DateTimeInterface
+    #[Pure] public function getStart(): \DateTimeImmutable
     {
         return $this->period->start();
     }
@@ -131,7 +131,7 @@ class Slot implements \Stringable
      * e.g. Task[2021-10-23T08:00:00 - 2021-10-23T09:00:00] is meant to end just before 9am (08:59:59.9999999).
      * @return \DateTimeInterface
      */
-    #[Pure] public function getEnd(): \DateTimeInterface
+    #[Pure] public function getEnd(): \DateTimeImmutable
     {
         return $this->period->end();
     }

@@ -4,22 +4,23 @@
 namespace App\Tests;
 
 
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-trait DoctrineTrait
+trait DoctrineTestCase
 {
-    protected static function getConnection(): \Doctrine\DBAL\Connection
+    protected static function getConnection(): Connection
     {
         return static::getContainer()->get('doctrine')->getConnection();
     }
 
-    protected static function getManager(): \Doctrine\ORM\EntityManagerInterface
+    protected static function getManager(): EntityManagerInterface
     {
         return static::getContainer()->get('doctrine')->getManager();
     }
 
-    protected static function persist(object $object): void
+    protected static function persist(object $object)
     {
         static::getManager()->persist($object);
     }
@@ -37,6 +38,11 @@ trait DoctrineTrait
     protected static function contains(object $object): bool
     {
         return static::getManager()->contains($object);
+    }
+
+    protected static function find(string $className, mixed $id): ?object
+    {
+        return static::getManager()->find($className, $id);
     }
 
     protected abstract static function getContainer(): ContainerInterface;

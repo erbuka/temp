@@ -12,12 +12,12 @@ use App\Entity\Schedule;
 use App\Entity\Service;
 use App\Entity\Task;
 use App\Repository\TaskRepository;
-use App\Tests\DoctrineTrait;
+use App\Tests\DoctrineTestCase;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 class TaskTest extends KernelTestCase
 {
-    use DoctrineTrait;
+    use DoctrineTestCase;
 
     public function testWeekendsInvalid() {
         $validator = $this->getContainer()->get('validator');

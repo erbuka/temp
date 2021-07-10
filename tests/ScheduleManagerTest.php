@@ -23,6 +23,86 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 class ScheduleManagerTest extends KernelTestCase
 {
+    public function testSlotGenerationShouldRespectHours() {
+        $schedule = new Schedule(
+            $from = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-12T09:30:00Z'),
+            $to = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-14T12:20:00Z')
+        );
+        $manager = static::getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+
+        $this->assertEquals($from->modify('10:00:00'), $manager->getFrom(), "Start date does not account for hours");
+        $this->assertEquals($to->modify('12:00:00'), $manager->getTo(), "End date does not account for hours");
+    }
+
+    //region DateTime utils
+
+    public function testCeilDateTimeToSlotsInterval() {
+        $d = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-04T09:12:34Z');
+        $dc = $d->setTime(10 ,0, 0);
+
+        $this->assertEquals($dc, ScheduleManager::ceilDateTimeToSlots($d), "Should ceil to next hour");
+        $this->assertEquals($dc, ScheduleManager::ceilDateTimeToSlots($dc), "Should not ceil o'clock time");
+    }
+
+    public function testFloorDateTimeToSlotsInterval() {
+        $d = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-04T09:12:34Z');
+        $df = $d->setTime(9 ,0, 0);
+
+        $this->assertEquals($df, ScheduleManager::floorDateTimeToSlotsInterval($d), "Should floor to beginning of the current hour");
+        $this->assertEquals($df, ScheduleManager::ceilDateTimeToSlots($df), "Should not floor o'clock time");
+    }
+
+    /**
+     * @dataProvider emptyScheduleProvider
+     */
+    public function testCreateFittedPeriodFromBoundaries() {
+        $schedule = new Schedule(
+            $from = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-12T09:30:00Z'),
+            $to = \DateTimeImmutable::createFromFormat(DATE_RFC3339, '2021-07-14T12:20:00Z')
+        );
+        $manager = static::getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+
+        $p1 = $manager->createFittedPeriodFromBoundaries(
+            $p1s = $from->modify('-2hours'),
+            $p1e = $to->modify('+1hours')
+        );
+
+        $this->assertEquals($manager->getFrom(), $p1->includedStart(), "Start not fitted to schedule boundaries");
+        $this->assertTrue($p1->isEndExcluded(), "Period end is not excluded");
+        $this->assertEquals($manager->getTo(), $p1->end(), "End not fitted to schedule boundaries");
+        $this->assertTrue($p1->precision()->equals(Precision::HOUR()), "Period precision must be the hour");
+
+        $p2 = $manager->createFittedPeriodFromBoundaries(
+            $p2s = $from->modify('+6hours 10:00:00'),
+            $p2e = $to->modify('-1day 12:00:00')
+        );
+
+        $this->assertTrue($p1->isEndExcluded(), "Period end not excluded");
+        $this->assertEquals($p2s, $p2->start(), "Period start mismatch");
+        $this->assertEquals($p2e, $p2->end(), "Period end mismatch");
+
+        $p3 = $manager->createFittedPeriodFromBoundaries(
+            $p3s = $from,
+            $p3e = $to,
+        );
+
+        $this->assertTrue($p3->isEndExcluded(), "Period end not excluded");
+        $this->assertEquals($manager->getFrom(), $p3->start(), "Period start mismatch");
+        $this->assertEquals($manager->getTo(), $p3->end(), "Period end mismatch");
+
+        $p = $manager->createFittedPeriodFromBoundaries(
+            $ps = $manager->getFrom(),
+            $pe = $manager->getTo(),
+        );
+
+        $this->assertTrue($p->isEndExcluded(), "Period end not excluded");
+        $this->assertEquals($manager->getFrom(), $p->start(), "Period start mismatch");
+        $this->assertEquals($manager->getTo(), $p->end(), "Period end mismatch");
+    }
+
+
+    //endregion DateTime utils
+
     public function testTasksConsolidationShouldNotConsolidate() {
         $schedule = new Schedule($from = new \DateTimeImmutable('2021-06-18'), $from->modify('+1 week'));
         $manager = $this->getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
@@ -203,6 +283,74 @@ class ScheduleManagerTest extends KernelTestCase
 
     }
 
+    /**
+     * @dataProvider emptyScheduleAndContractedServiceProvider
+     */
+    public function testReallocateToSameDayAdjacentSlots(ScheduleManager $manager, Schedule $schedule, ContractedService $contractedService)
+    {
+        $from = $schedule->getFrom();
+        $manager->addTask($t0 = (new Task)
+            ->setContractedService($contractedService)
+            ->setStart($from->modify('10:00'))
+            ->setEnd($from->modify('18:00'))
+            ->setOnPremises(true));
+        $manager->addTask($t1 = (new Task)
+            ->setContractedService($contractedService)
+            ->setStart($from->modify('+1day 10:00'))
+            ->setEnd($from->modify('+1day 12:00'))
+            ->setOnPremises(true));
+        $manager->addTask($t2 = (new Task)
+            ->setContractedService($contractedService)
+            ->setStart($from->modify('+2day 08:00'))
+            ->setEnd($from->modify('+2day 16:00'))
+            ->setOnPremises(true));
+
+        $period = Period::make($from->modify('+2day 08:00'), $from->modify('+2day 18:00'), Precision::HOUR(), Boundaries::EXCLUDE_END());
+        $manager->reallocateTaskToSameDayAdjacentSlots($t1, $period);
+
+        $this->assertEquals($from->modify('+2day 16:00'), $t1->getStart(), "Task start not reallocated forwards");
+        $this->assertEquals($from->modify('+2day 18:00'), $t1->getEnd(), "Task end not reallocated forwards");
+
+        $periodBackwards = Period::make($from->modify('08:00'), $from->modify('18:00'), Precision::HOUR(), Boundaries::EXCLUDE_END());
+        $manager->reallocateTaskToSameDayAdjacentSlots($t1, $periodBackwards);
+
+        $this->assertEquals($from->modify('08:00'), $t1->getStart(), "Task start not reallocated backwards");
+        $this->assertEquals($from->modify('10:00'), $t1->getEnd(), "Task end not reallocated backwards");
+    }
+
+//    public function testOnPremisesTaskScheduling(ScheduleManager $manager, Schedule $schedule, ContractedService $contractedService) {
+//        $this->markTestIncomplete();
+//
+//        $from = $schedule->getFrom();
+//
+//        // Select originating tasks
+//        $to1 = $to2 = $to3 = $to4;
+//
+//        // while I cumulated enough hours, remove and shrink selected tasks starting from the beginning
+//
+//        // -> $toRemove = [...]
+//        // -> $shrunk = [..]
+//
+//
+//
+//        $t0 = (new Task)
+//            ->setContractedService($contractedService)
+//            ->setStart($from->modify('10:00'))
+//            ->setEnd($from->modify('18:00'))
+//            ->setOnPremises(true);
+//
+//        // 1. Get overlapping tasks from schedule
+//
+//        // Reschedule
+//        $manager->reallocateTaskToSameDayAdjacentSlots($t_ovrelap, $period);
+//        $manager->reallocateTaskToSameDayAdjacentSlots($t_ovrelap, $period);
+//
+//        // Assert target slots are now free;
+//
+//
+//
+//    }
+
     //region Commands
 
     /**
@@ -288,7 +436,7 @@ class ScheduleManagerTest extends KernelTestCase
             ->setOnPremises(true)
             ->setContractedService($cs);
 
-        $this->expectExceptionMessageMatches('/Period .+ is outside schedule period .+/i');
+        $this->expectExceptionMessageMatches('/Period .+ is outside schedule .+/i');
         $manager->addTask($t);
         $manager->moveTask($t, Period::make($from->setTime(6, 0), $t->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END()));
     }
@@ -382,9 +530,19 @@ class ScheduleManagerTest extends KernelTestCase
 
     //region Providers
 
+    public function emptyScheduleProvider() {
+        $schedule = new Schedule($from = new \DateTimeImmutable('2021-7-15T08:00:00Z'), $from->modify('+1year'));
+        $manager = new ScheduleManager($schedule);
+
+        $fixtures = [
+            'schedule#1' => [$manager, $schedule]
+        ];
+        return $fixtures;
+    }
+
     public function emptyScheduleAndContractedServiceProvider() {
-        $schedule = new Schedule($from = new \DateTimeImmutable('2021-07-15'), $from->modify('+12 month'));
-        $manager = static::getContainer()->get(ScheduleManagerFactory::class)->createScheduleManager($schedule);
+        $schedule = new Schedule($from = new \DateTimeImmutable('2021-07-12'), $from->modify('+12 month'));
+        $manager = new ScheduleManager($schedule);
         $cs = (new ContractedService())
             ->setContract((new Contract)->setRecipient((new Recipient())->setName('Recipient #2')))
             ->setConsultant((new Consultant())->setName('Cugusi Mario'))

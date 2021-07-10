@@ -23,9 +23,9 @@ interface ScheduleInterface
 
     public function removeTask(Task $task): static;
 
-    public function getFrom(): \DateTimeInterface;
+    public function getFrom(): \DateTimeImmutable;
 
-    public function getTo(): \DateTimeInterface;
+    public function getTo(): \DateTimeImmutable;
 
     public function containsTask(Task $task): bool;
 

@@ -7,15 +7,21 @@ use App\ConsultantSchedule;
 use App\Entity\Consultant;
 use App\Entity\Schedule;
 use App\Entity\Task;
+use App\NoFreeSlotsAvailableException;
 use App\ScheduleManagerFactory;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
+use Spatie\Period\Boundaries;
+use Spatie\Period\Period;
+use Spatie\Period\Precision;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -129,9 +135,13 @@ class TaskController extends AbstractController
 
     }
 
-    public function create()
+    #[Route('/test', name: 'create', methods: ['GET'])]
+    public function create(EntityManagerInterface $entityManager, ScheduleManagerFactory $managerFactory): Response
     {
 
+        $task = new Task();
+
+        return new JsonResponse($this->jsonTask($task), Response::HTTP_CREATED);
     }
 
     public function update()
@@ -159,5 +169,82 @@ class TaskController extends AbstractController
         $entityManager->flush();
 
         return new Response('ok');
+    }
+
+    /**
+     *
+     * TODO:
+     *  - task must not be alrady exectued/performed: do this by simply applying the transition to 'scheduled' and see if it throws
+     *
+     * @param EntityManagerInterface $em
+     * @param ValidatorInterface $validator
+     * @param ScheduleManagerFactory $scheduleManagerFactory
+     * @return Response
+     */
+    #[Route('/{taskId<\d+>}/delay', name: 'delay', methods: ['POST'])]
+    public function delay(int $taskId, Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): JsonResponse
+    {
+        // TODO check permissions
+        $task = $em->find(Task::class, $taskId);
+        if (!$task)
+            throw $this->createNotFoundException("Task not found");
+
+        // Parse parameters
+        if ($after = $request->request->get('after')) {
+            $after = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $after);
+            if (false === $after)
+                throw new BadRequestHttpException();
+        }
+        if ($before = $request->request->get('before')) {
+            $before = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $before);
+            if (false === $before)
+                throw new BadRequestException();
+        }
+
+        $schedule = $task->getSchedule();
+        $manager = $scheduleManagerFactory->createScheduleManager($schedule);
+
+        // Set default parameters
+        if (!$before) {
+            $before = $manager->getTo();
+        }
+        if (!$after) {
+            $after = $task->getEnd()->modify('+4days 08:00');
+        }
+
+        // Validate parameters
+        if ($after < $task->getEnd())
+            throw new BadRequestHttpException("after={$after->format(DATE_ATOM)} must be after task end={$task->getEnd()->format(DATE_ATOM)})");
+        if ($after < $task->getEnd()->modify('+4days 08:00'))
+            throw new BadRequestHttpException("Tasks must be delayed by at least 4 days.");
+
+        $period = $manager->createFittedPeriodFromBoundaries($after, $before);
+
+        try {
+            $manager->reallocateTaskToSameDayAdjacentSlots($task, $period);
+        } catch (NoFreeSlotsAvailableException $e) {
+            throw new BadRequestHttpException("No free slots available");
+        }
+
+        $changeset = $manager->getScheduleChangeset();
+
+        $em->persist($changeset);
+
+        $em->flush();
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+
+    private function jsonTask(Task $task): array
+    {
+        return [
+            'id' => $task->getId(),
+            'start' => $task->getStart()->format(DATE_RFC3339),
+            'end' => $task->getEnd()->format(DATE_RFC3339),
+            'onpremises' => $task->isOnPremises(),
+            'schedule' => $task->getSchedule()->getId(),
+            'contracted_service' => $task->getContractedService()->getId()
+        ];
     }
 }
