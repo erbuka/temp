@@ -25,6 +25,11 @@ trait DoctrineTestCase
         static::getManager()->persist($object);
     }
 
+    protected static function refresh(object $object)
+    {
+        static::getManager()->refresh($object);
+    }
+
     protected static function flush(): void
     {
         static::getManager()->flush();

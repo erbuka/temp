@@ -49,8 +49,8 @@ class ScheduleCommandTest extends KernelTestCase
     {
         $from = $schedule->getFrom();
         $t = (new Task)
-            ->setStart($from->setTime(10, 0))
-            ->setEnd($from->setTime(12, 0))
+            ->setStart($t1s = $from->setTime(10, 0))
+            ->setEnd($t1e = $from->setTime(12, 0))
             ->setOnPremises(true)
             ->setContractedService($cs);
         $schedule->addTask($t);
@@ -60,11 +60,15 @@ class ScheduleCommandTest extends KernelTestCase
 
         $this->assertCount(0, $schedule->getTasks());
         $this->assertFalse($schedule->getTasks()->contains($t), "Schedule should not contain the task");
+        $this->assertEquals($t1s, $t->getStart(), "Task start should not be changed");
+        $this->assertEquals($t1e, $t->getEnd(), "Task end should not be changed");
 
         $cmd->undo();
 
         $this->assertCount(1, $schedule->getTasks());
         $this->assertTrue($schedule->getTasks()->contains($t));
+        $this->assertEquals($t1s, $t->getStart(), "Task start should not be changed");
+        $this->assertEquals($t1e, $t->getEnd(), "Task end should not be changed");
     }
 
     /**

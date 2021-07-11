@@ -148,8 +148,14 @@
     "guzzlehttp/psr7": {
         "version": "1.8.1"
     },
+    "helmich/phpunit-json-assert": {
+        "version": "v3.4.2"
+    },
     "jetbrains/phpstorm-attributes": {
         "version": "1.0"
+    },
+    "justinrainbow/json-schema": {
+        "version": "5.2.10"
     },
     "laminas/laminas-code": {
         "version": "4.1.0"
@@ -305,6 +311,9 @@
     },
     "sebastian/version": {
         "version": "3.0.2"
+    },
+    "softcreatr/jsonpath": {
+        "version": "0.7.5"
     },
     "spatie/period": {
         "version": "2.1.0"
@@ -480,9 +489,6 @@
             "config/packages/prod/monolog.yaml",
             "config/packages/test/monolog.yaml"
         ]
-    },
-    "symfony/orm-pack": {
-        "version": "v2.1.0"
     },
     "symfony/password-hasher": {
         "version": "v5.3.0-rc1"

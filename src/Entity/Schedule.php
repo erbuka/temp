@@ -8,6 +8,7 @@ use App\ScheduleManager;
 use App\Slot;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\Common\Collections\Selectable;
 use Doctrine\ORM\Mapping as ORM;
 use Spatie\Period\Boundaries;
 use Spatie\Period\Period;
@@ -115,9 +116,9 @@ class Schedule implements ScheduleInterface
     }
 
     /**
-     * @return Collection<int, Task>
+     * @return Collection|Selectable
      */
-    public function getTasks(): Collection
+    public function getTasks(): Collection|Selectable
     {
         return $this->tasks;
     }

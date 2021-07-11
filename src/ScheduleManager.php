@@ -13,6 +13,7 @@ use App\Entity\Schedule;
 use App\Entity\ScheduleChangeset;
 use App\Entity\Task;
 use App\Repository\ScheduleRepository;
+use App\Validator\Constraints\NotItalianHolidayValidator;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Spatie\Period\Boundaries;
@@ -26,6 +27,8 @@ use Symfony\Component\Workflow\WorkflowInterface;
 class ScheduleManager implements ScheduleInterface
 {
     const SLOT_INTERVAL = 3600; // seconds
+    const DAY_START = '08:00';
+    const DAY_END = '18:00'; // excluded
     const DATE_NOTIME = 'Y-m-d';
     const DATE_HOURHASH = 'YmdH';
     const DATE_DAYHASH = 'Ymd';
@@ -134,363 +137,6 @@ class ScheduleManager implements ScheduleInterface
     }
 
     /**
-     * @return Slot|null
-     */
-    public function getRandomFreeSlot(Period $period = null): ?Slot
-    {
-        $slots = $this->slots;
-
-        if (!$period)
-            $period = $this->getSchedulePeriod();
-
-        assert($this->getSchedulePeriod()->contains($period));
-
-        $afterIndex = $this->getPeriodStartSlot($period)->getIndex();
-        $beforeIndex = $this->getPeriodEndSlot($period)->getIndex();
-
-        $index = rand($afterIndex, $beforeIndex);
-        /** @var Slot $slot */
-        $slot = $slots[$index];
-
-        if ($slot->isFree())
-            return $slot;
-
-        try {
-            $slot = $this->getClosestFreeSlot($slot, period: $period, direction: match (rand(0, 1)){ 0 => 'before', 1 => 'after' });
-        } catch (NoMatchingSlotsAvailableException $e) {
-            $slot = $this->getClosestFreeSlot($slot, period: $period);
-        }
-
-//        assert($slot->isFree() === true, "Slot expected to be free");
-        return $slot;
-    }
-
-    /**
-     * @return Slot[]
-     */
-    protected function getRandomFreeSlotsSameDay(int $min = 1, int $preferred = 1, Period $period = null): array
-    {
-        if ($min < 1 || $preferred < 1)
-            throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
-
-        if (!$period)
-            $period = $this->getSchedulePeriod();
-
-        /** @var Slot[] $slots */
-        $initialSlot = $this->getRandomFreeSlot($period);
-        if (!$initialSlot)
-            return []; // No more slots available in the period
-
-        $slots = [$initialSlot];
-
-        if ($min == 1 && $preferred == 1)
-            return $slots;
-
-        // Get all free slots in the day, then random pick slots until satisfied
-        $hash = static::getDayHash($initialSlot);
-        assert(is_array($this->slotsByDay[$hash]), "Empty slotsByDay for day hash $hash");
-
-        // does include initial slot
-        $freeSlots = array_filter($this->slotsByDay[$hash], fn(/** @var Slot $s */$s) => $s->isFree());
-
-        $dog = 1000;
-        while ((count($slots) < $min || count($slots) < $preferred) && $dog--) {
-            // add another slot
-
-            // try adjacent ones
-            $last = array_search($slots[array_key_last($slots)], $freeSlots, true);
-            $first = array_search($slots[array_key_first($slots)], $freeSlots, true);
-            if (isset($freeSlots[$last + 1]))
-                $slot = $freeSlots[$last + 1];
-            elseif (isset($freeSlots[$first - 1]))
-                $slot = $freeSlots[$first - 1];
-            else
-                $slot = $freeSlots[array_rand($freeSlots)];
-
-            if (!in_array($slot, $slots))
-                array_push($slots, $slot);
-
-            if (count($slots) == count($freeSlots))
-                break; // no more free slots available
-        }
-
-        assert(empty(array_filter($slots, fn(/** @var Slot $s */ $s) => $s->isAllocated())), "Returning non free slots");
-
-        return $slots;
-    }
-
-    /**
-     * May return more slots than $min and $preferred, in which case it is up to the caller to chose how many slots to use.
-     *
-     * PROBLEM: period is enforced with hourly precision, that is if the random picked slot is >= $min in a day that has more than 1 adjacent slots free,
-     * the picked slot is returned because it >= $min and belongs to the day.
-     *
-     * @return Slot[] sorted by ascending time
-     * @throws NoSlotsAvailableException
-     */
-    protected function getRandomFreeAdjacentSameDaySlots(int $min = 1, int $preferred = 1, Period $period = null): array
-    {
-        if ($min < 1 || $preferred < 1)
-            throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
-//        if ($period->precision()->equals(Precision::DAY()))
-//            $period = Period::make(
-//                reset($this->slotsByDay[static::getDayHash($period->includedStart())])->getStart(),
-//                end($this->slotsByDay[static::getDayHash($period->includedEnd()])->getEnd(),
-//                Precision::HOUR(), Boundaries::EXCLUDE_END()
-//            );
-
-        assert($this->getSchedulePeriod()->contains($period));
-
-        // Starts
-        $afterIndex = $this->getPeriodStartSlot($period)->getIndex(); // Included
-        $beforeIndex = $this->getPeriodEndSlot($period)->getIndex(); // Included
-
-        /** @var Slot[] $slots */
-        try {
-            $initialSlot = $this->getRandomFreeSlot($period);
-        } catch (NoMatchingSlotsAvailableException $e) {
-            throw $e;
-        }
-
-        if (!$initialSlot) throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
-        assert($initialSlot->getIndex() >= $afterIndex && $initialSlot->getIndex() <= $beforeIndex);
-
-        /** @var Slot[] $closestAfter */
-        /** @var Slot[] $closestBefore */
-        $closestAfter = $closestBefore = null;
-        $closestAfterDistance = $closestBeforeDistance = INF;
-
-        // find closest afterwards, including given slot
-        // Sets initial slot fo the earliest slot in the day
-        $initialSlot = reset($this->slotsByDay[static::getDayHash($initialSlot)]);
-        $adjacentSlots = [];
-        $dayAdjacentSlots = [];
-        for ($idx = $initialSlot->getIndex(); $idx <= $beforeIndex; $idx++) {
-            // First iteration is the initial slot
-            /** @var Slot $slot */
-            $slot = $this->slots[$idx];
-
-            if ($slot->isFree())
-                $adjacentSlots[] = $slot;
-            else {
-                // Store adjacent slot in current day
-                if (count($adjacentSlots) >= $min)
-                    $dayAdjacentSlots[] = $adjacentSlots;
-
-                $adjacentSlots = [];
-            }
-
-            // Lookahead: if new day or last slot, then decide whether to return found adjacent slots or keep going
-            if ($idx === $beforeIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx+1])) {
-                if (count($adjacentSlots) >= $min)
-                    $dayAdjacentSlots[] = $adjacentSlots;
-
-                if (count($dayAdjacentSlots) > 0) {
-                    // Slot blocks will have at least $min elements
-
-                    $largest = null;
-                    foreach ($dayAdjacentSlots as $slots) {
-                        /** @var Slot[] $slots */
-                        if (!isset($largest) || count($slots) > count($largest))
-                            $largest = $slots;
-
-                        if (count($largest) >= $preferred) {
-                            break;
-                        }
-                    }
-
-                    assert(isset($largest));
-                    $closestAfter = $largest;
-                    $closestAfterDistance = $initialSlot->getIndex() - reset($closestAfter)->getIndex();
-                    break;
-                }
-
-                // Resets structures on new day
-                $adjacentSlots = [];
-                $dayAdjacentSlots = [];
-            }
-        }
-
-        // Find closest earlier, including given slot
-//        if (isset($this->slots[$initialSlot->getIndex() - 1]))
-//            $initialSlot = $this->slots[$initialSlot->getIndex() - 1]; // Start from last slot of previous day
-
-        $adjacentSlots = [];
-        $dayAdjacentSlots = [];
-        for ($idx = $initialSlot->getIndex(); $idx >= $afterIndex; $idx--) {
-            // First iteration is the initial slot
-            /** @var Slot $slot */
-            $slot = $this->slots[$idx];
-
-            if ($slot->isFree())
-                $adjacentSlots[] = $slot;
-            else {
-                // Store adjacent slot in current day
-                if (count($adjacentSlots) >= $min)
-                    $dayAdjacentSlots[] = $adjacentSlots;
-
-                $adjacentSlots = [];
-            }
-
-            // Lookahead: If new day, then decide whether to return found adjacent slots or keep going
-            if ($idx === $afterIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx-1])) {
-                if (count($adjacentSlots) >= $min)
-                    $dayAdjacentSlots[] = $adjacentSlots;
-
-                if (count($dayAdjacentSlots) > 0) {
-                    // Slot blocks will have at least $min elements
-
-                    $largest = null;
-                    foreach ($dayAdjacentSlots as $slots) {
-                        /** @var Slot[] $slots */
-                        if (!isset($largest) || count($slots) > count($largest))
-                            $largest = $slots;
-
-                        if (count($largest) >= $preferred) {
-                            break;
-                        }
-                    }
-
-                    assert(isset($largest));
-                    $closestBefore = $largest;
-                    $closestBefore = array_reverse($closestBefore, false);
-//                    usort($closestBefore, fn($s1, $s2) => $s1->getStart() <=> $s2->getStart());
-                    $closestBeforeDistance = end($closestBefore)->getIndex() - $initialSlot->getIndex();
-                    break;
-                }
-
-                // Resets structures on new day
-                $adjacentSlots = [];
-                $dayAdjacentSlots = [];
-            }
-
-        }
-
-        if (!$closestAfter && !$closestBefore)
-            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
-
-        // Both found and equally distant
-        if ($closestBeforeDistance === $closestAfterDistance && $closestBefore && $closestAfter)
-            return [$closestBefore,$closestAfter][rand(0, 1)];
-
-        if ($closestBefore && $closestBeforeDistance < $closestAfterDistance) {
-            // N.B. ($closestBackwards !== null && $closestForward === null) => $closestBackwardsDistance < $closestForwardDistance(=INF)
-            return $closestBefore;
-        }
-
-        if ($closestAfter && $closestAfterDistance < $closestBeforeDistance) {
-            // N.B. ($closestForward !== null && $closestBackwards === null) => $closestForwardDistance < $closestBackwardsDistance(=INF)
-            return $closestAfter;
-        }
-
-        throw new \LogicException('This should not be executed');
-    }
-
-    //region Allocation API
-
-    public function allocateAdjacentSameDaySlots(Task $task, int $min = 1, int $preferred = 1, Period $period = null): int
-    {
-        if ($min < 1 || $preferred < 1 || $preferred < $min)
-            throw new \InvalidArgumentException(__METHOD__ ." $min < 1 || $preferred < 1 || $preferred < $min");
-
-        if ($this->containsTask($task)) {
-            throw new \InvalidArgumentException("Task {$task} already allocated");
-        }
-
-        $slots = $this->getRandomFreeAdjacentSameDaySlots($min, $preferred, $period);
-
-        if (count($slots) < $min)
-            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
-
-        $end = $slots[0]->getEnd();
-        $allocated = 1;
-        while ($allocated < $preferred && $allocated < count($slots))
-        {
-            $end = $slots[$allocated++]->getEnd();
-        }
-
-        $task->setStart($slots[0]->getStart());
-        $task->setEnd($end);
-
-        if ($this->taskWorkflow) {
-            $this->taskWorkflow->getMarking($task); // Sets initial marking + triggers workflow events
-        }
-
-        $this->addTask($task);
-
-        assert($task->getHours() === $allocated);
-        assert($allocated >= $min);
-        assert($allocated <= $preferred);
-
-        return $allocated;
-    }
-
-    /**
-     * Moves a task into a random set of adjacent *free* blocks within the given period.
-     * throw if no set of adjacent blocks are available.
-     *
-     * Adjacent slots are randomly selected within the given period.
-     *
-     * @param Task $task
-     * @param Period $period
-     */
-    public function reallocateTaskToSameDayAdjacentSlots(Task $task, Period $period)
-    {
-        if ($period->contains($task->getPeriod()))
-            throw new \InvalidArgumentException("Given period {$period->asString()} must not include the task {$task}");
-
-        $slots = $this->getRandomFreeAdjacentSameDaySlots(min: $task->getHours(), period: $period);
-        assert(count($slots) >= $task->getHours());
-        assert(empty(array_filter($slots, fn($slot) => $slot->isAllocated())), "Returned slots are not empty");
-
-        $this->moveTask($task, Period::make(
-            reset($slots)->getStart(),
-            end($slots)->getEnd(),
-            Precision::HOUR(), Boundaries::EXCLUDE_END())
-        );
-    }
-
-    //endregion Allocation API
-
-    private function getPeriodStartSlot(Period $period): Slot
-    {
-        $start = $period->includedStart();
-
-        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($start)]) && $start < end($this->slotsByDayHours)->getEnd()) {
-            $start = $start->modify('+1 hour');
-
-            if ($period->endsBefore($start))
-                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
-        }
-
-        return $this->slotsByDayHours[$hash];
-    }
-
-    private function getSlotFromDateTime(\DateTimeInterface $dateTime): ?Slot
-    {
-        $dayHourHash = static::getDayHourHash($dateTime);
-
-        if (!isset($this->slotsByDayHours[$dayHourHash]))
-            return null;
-
-        return $this->slotsByDayHours[$dayHourHash];
-    }
-
-    private function getPeriodEndSlot(Period $period): Slot
-    {
-        $end = $period->includedEnd();
-
-        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($end)]) && $end >= reset($this->slotsByDayHours)->getStart()) {
-            $end = $end->modify('-1 hour');
-
-            if ($period->startsAfter($end))
-                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
-        }
-
-        return $this->slotsByDayHours[$hash];
-    }
-
-    /**
      * Closest does not mean adjacent or in the same day.
      * @throws NoFreeSlotsAvailableException
      */
@@ -561,6 +207,369 @@ class ScheduleManager implements ScheduleInterface
         }
 
         throw new \LogicException('This should not be executed');
+    }
+
+    /**
+     * @return Slot|null
+     */
+    public function getRandomFreeSlot(Period $period = null): ?Slot
+    {
+        $slots = $this->slots;
+
+        if (!$period)
+            $period = $this->getSchedulePeriod();
+
+        assert($this->getSchedulePeriod()->contains($period));
+
+        $afterIndex = $this->getPeriodStartSlot($period)->getIndex();
+        $beforeIndex = $this->getPeriodEndSlot($period)->getIndex();
+
+        $index = rand($afterIndex, $beforeIndex);
+        /** @var Slot $slot */
+        $slot = $slots[$index];
+
+        if ($slot->isFree())
+            return $slot;
+
+        try {
+            $slot = $this->getClosestFreeSlot($slot, period: $period, direction: match (rand(0, 1)){ 0 => 'before', 1 => 'after' });
+        } catch (NoMatchingSlotsAvailableException $e) {
+            $slot = $this->getClosestFreeSlot($slot, period: $period);
+        }
+
+//        assert($slot->isFree() === true, "Slot expected to be free");
+        return $slot;
+    }
+
+    /**
+     * @return Slot[]
+     */
+    protected function getRandomSameDayFreeSlots(int $min = 1, int $preferred = 1, Period $period = null): array
+    {
+        if ($min < 1 || $preferred < 1)
+            throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
+
+        if (!$period)
+            $period = $this->getSchedulePeriod();
+
+        /** @var Slot[] $slots */
+        $initialSlot = $this->getRandomFreeSlot($period);
+        if (!$initialSlot)
+            return []; // No more slots available in the period
+
+        $slots = [$initialSlot];
+
+        if ($min == 1 && $preferred == 1)
+            return $slots;
+
+        // Get all free slots in the day, then random pick slots until satisfied
+        $hash = static::getDayHash($initialSlot);
+        assert(is_array($this->slotsByDay[$hash]), "Empty slotsByDay for day hash $hash");
+
+        // does include initial slot
+        $freeSlots = array_filter($this->slotsByDay[$hash], fn(/** @var Slot $s */$s) => $s->isFree());
+
+        $dog = 1000;
+        while ((count($slots) < $min || count($slots) < $preferred) && $dog--) {
+            // add another slot
+
+            // try adjacent ones
+            $last = array_search($slots[array_key_last($slots)], $freeSlots, true);
+            $first = array_search($slots[array_key_first($slots)], $freeSlots, true);
+            if (isset($freeSlots[$last + 1]))
+                $slot = $freeSlots[$last + 1];
+            elseif (isset($freeSlots[$first - 1]))
+                $slot = $freeSlots[$first - 1];
+            else
+                $slot = $freeSlots[array_rand($freeSlots)];
+
+            if (!in_array($slot, $slots))
+                array_push($slots, $slot);
+
+            if (count($slots) == count($freeSlots))
+                break; // no more free slots available
+        }
+
+        assert(empty(array_filter($slots, fn(/** @var Slot $s */ $s) => $s->isAllocated())), "Returning non free slots");
+
+        return $slots;
+    }
+
+    /**
+     * May return more slots than $min and $preferred, in which case it is up to the caller to chose how many slots to use.
+     *
+     * PROBLEM: period is enforced with hourly precision, that is if the random picked slot is >= $min in a day that has more than 1 adjacent slots free,
+     * the picked slot is returned because it >= $min and belongs to the day.
+     *
+     * @return Slot[] sorted by ascending time
+     */
+    protected function getRandomSameDayAdjacentFreeSlots(Period $period = null, int $min = 1, int $preferred = 1, int $max = null): array
+    {
+        if (isset($max) && ($min > $max || $preferred > $max))
+            throw new \InvalidArgumentException("$min > $max || $preferred > $max");
+        if ($min < 1 || $preferred < 1)
+            throw new \InvalidArgumentException("$min < 1 || $preferred < 1");
+//        if ($period->precision()->equals(Precision::DAY()))
+//            $period = Period::make(
+//                reset($this->slotsByDay[static::getDayHash($period->includedStart())])->getStart(),
+//                end($this->slotsByDay[static::getDayHash($period->includedEnd()])->getEnd(),
+//                Precision::HOUR(), Boundaries::EXCLUDE_END()
+//            );
+
+        assert($this->getSchedulePeriod()->contains($period));
+
+        // Starts
+        $afterIndex = $this->getPeriodStartSlot($period)->getIndex(); // Included
+        $beforeIndex = $this->getPeriodEndSlot($period)->getIndex(); // Included
+
+        /** @var Slot[] $slots */
+        try {
+            $initialSlot = $this->getRandomFreeSlot($period);
+        } catch (NoMatchingSlotsAvailableException $e) {
+            throw $e;
+        }
+
+        if (!$initialSlot) throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
+        assert($initialSlot->getIndex() >= $afterIndex && $initialSlot->getIndex() <= $beforeIndex);
+
+        /** @var Slot[] $closestAfter */
+        /** @var Slot[] $closestBefore */
+        $closestAfter = $closestBefore = null;
+        $closestAfterDistance = $closestBeforeDistance = INF;
+
+        // find closest afterwards, including given slot
+        // Sets initial slot fo the earliest slot in the day
+        $initialSlot = reset($this->slotsByDay[static::getDayHash($initialSlot)]);
+        $adjacentSlots = [];
+        $dayAdjacentSlots = [];
+        for ($idx = $initialSlot->getIndex(); $idx <= $beforeIndex; $idx++) {
+            // First iteration is the initial slot
+            /** @var Slot $slot */
+            $slot = $this->slots[$idx];
+
+            if ($slot->isFree())
+                $adjacentSlots[] = $slot;
+            else {
+                // Store adjacent slot in current day
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                $adjacentSlots = [];
+            }
+
+            // Lookahead: if new day or last slot, then decide whether to return found adjacent slots or keep going
+            if ($idx === $beforeIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx+1])) {
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                if (count($dayAdjacentSlots) > 0) {
+                    // Slot blocks will have at least $min elements
+
+                    $largest = null;
+                    foreach ($dayAdjacentSlots as $slots) {
+                        /** @var Slot[] $slots */
+                        if (!isset($largest) || count($slots) > count($largest))
+                            $largest = $slots;
+
+                        if (count($largest) >= $preferred) {
+                            break;
+                        }
+                    }
+
+                    assert(isset($largest));
+                    $closestAfter = array_slice($largest, 0, $max);
+                    $closestAfterDistance = $initialSlot->getIndex() - reset($closestAfter)->getIndex();
+                    break;
+                }
+
+                // Resets structures on new day
+                $adjacentSlots = [];
+                $dayAdjacentSlots = [];
+            }
+        }
+
+        // Find closest earlier, including given slot
+//        if (isset($this->slots[$initialSlot->getIndex() - 1]))
+//            $initialSlot = $this->slots[$initialSlot->getIndex() - 1]; // Start from last slot of previous day
+
+        $adjacentSlots = [];
+        $dayAdjacentSlots = [];
+        for ($idx = $initialSlot->getIndex(); $idx >= $afterIndex; $idx--) {
+            // First iteration is the initial slot
+            /** @var Slot $slot */
+            $slot = $this->slots[$idx];
+
+            if ($slot->isFree())
+                $adjacentSlots[] = $slot;
+            else {
+                // Store adjacent slot in current day
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                $adjacentSlots = [];
+            }
+
+            // Lookahead: If new day, then decide whether to return found adjacent slots or keep going
+            if ($idx === $afterIndex || (static::getDayHash($slot)) !== static::getDayHash($this->slots[$idx-1])) {
+                if (count($adjacentSlots) >= $min)
+                    $dayAdjacentSlots[] = $adjacentSlots;
+
+                if (count($dayAdjacentSlots) > 0) {
+                    // Slot blocks will have at least $min elements
+
+                    $largest = null;
+                    foreach ($dayAdjacentSlots as $slots) {
+                        /** @var Slot[] $slots */
+                        if (!isset($largest) || count($slots) > count($largest))
+                            $largest = $slots;
+
+                        if (count($largest) >= $preferred) {
+                            break;
+                        }
+                    }
+
+                    assert(isset($largest));
+                    $closestBefore = array_slice($largest, 0, $max);
+                    $closestBefore = array_reverse($closestBefore, false);
+//                    usort($closestBefore, fn($s1, $s2) => $s1->getStart() <=> $s2->getStart());
+                    $closestBeforeDistance = end($closestBefore)->getIndex() - $initialSlot->getIndex();
+                    break;
+                }
+
+                // Resets structures on new day
+                $adjacentSlots = [];
+                $dayAdjacentSlots = [];
+            }
+        }
+
+        if (!$closestAfter && !$closestBefore)
+            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
+
+        // Both found and equally distant
+        if ($closestBeforeDistance === $closestAfterDistance && $closestBefore && $closestAfter)
+            return [$closestBefore,$closestAfter][rand(0, 1)];
+
+        if ($closestBefore && $closestBeforeDistance < $closestAfterDistance) {
+            // N.B. ($closestBackwards !== null && $closestForward === null) => $closestBackwardsDistance < $closestForwardDistance(=INF)
+            return $closestBefore;
+        }
+
+        if ($closestAfter && $closestAfterDistance < $closestBeforeDistance) {
+            // N.B. ($closestForward !== null && $closestBackwards === null) => $closestForwardDistance < $closestBackwardsDistance(=INF)
+            return $closestAfter;
+        }
+
+        throw new \LogicException('This should not be executed');
+    }
+
+    //region Allocation API
+
+    /**
+     * Task must be new.
+     * Allocated slots are chosen among *free* slots.
+     */
+    public function allocateAdjacentSameDayFreeSlots(Task $task, int $min = 1, int $preferred = 1, Period $period = null): int
+    {
+        if ($min < 1 || $preferred < 1 || $preferred < $min)
+            throw new \InvalidArgumentException(__METHOD__ ." $min < 1 || $preferred < 1 || $preferred < $min");
+
+        if ($this->containsTask($task)) {
+            throw new \InvalidArgumentException("Task {$task} already allocated");
+        }
+
+        $slots = $this->getRandomSameDayAdjacentFreeSlots(period: $period, min: $min, preferred: $preferred);
+
+        if (count($slots) < $min)
+            throw new NoFreeSlotsAvailableException($this->schedule, period: $period);
+
+        $end = $slots[0]->getEnd();
+        $allocated = 1;
+        while ($allocated < $preferred && $allocated < count($slots))
+        {
+            $end = $slots[$allocated++]->getEnd();
+        }
+
+        $task->setStart($slots[0]->getStart());
+        $task->setEnd($end);
+
+        if ($this->taskWorkflow) {
+            $this->taskWorkflow->getMarking($task); // Sets initial marking + triggers workflow events
+        }
+
+        $this->addTask($task);
+
+        assert($task->getHours() === $allocated);
+        assert($allocated >= $min);
+        assert($allocated <= $preferred);
+
+        return $allocated;
+    }
+
+    /**
+     * Moves a task into a random set of adjacent *free* blocks within the given period.
+     * throw if no set of adjacent blocks are available.
+     *
+     * Adjacent slots are randomly selected within the given period.
+     *
+     * @param Task $task
+     * @param Period $period
+     */
+    public function reallocateTaskToSameDayAdjacentSlots(Task $task, Period $period)
+    {
+        if (!$this->containsTask($task))
+            throw new \InvalidArgumentException("Task {$task} does not belong to schedule {$this->schedule}");
+        if ($period->contains($task->getPeriod()))
+            throw new \InvalidArgumentException("Given period {$period->asString()} must not include the task {$task}");
+
+        $slots = $this->getRandomSameDayAdjacentFreeSlots(period: $period, min: $task->getHours(), preferred: $task->getHours(), max: $task->getHours());
+        assert(count($slots) === $task->getHours());
+        assert(empty(array_filter($slots, fn($slot) => $slot->isAllocated())), "Returned slots are not empty");
+
+        $this->moveTask($task, Period::make(
+            reset($slots)->getStart(),
+            end($slots)->getEnd(),
+            Precision::HOUR(), Boundaries::EXCLUDE_END())
+        );
+    }
+
+    //endregion Allocation API
+
+    private function getPeriodStartSlot(Period $period): Slot
+    {
+        $start = $period->includedStart();
+
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($start)]) && $start < end($this->slotsByDayHours)->getEnd()) {
+            $start = $start->modify('+1 hour');
+
+            if ($period->endsBefore($start))
+                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
+        }
+
+        return $this->slotsByDayHours[$hash];
+    }
+
+    private function getSlotFromDateTime(\DateTimeInterface $dateTime): ?Slot
+    {
+        $dayHourHash = static::getDayHourHash($dateTime);
+
+        if (!isset($this->slotsByDayHours[$dayHourHash]))
+            return null;
+
+        return $this->slotsByDayHours[$dayHourHash];
+    }
+
+    private function getPeriodEndSlot(Period $period): Slot
+    {
+        $end = $period->includedEnd();
+
+        while (!isset($this->slotsByDayHours[$hash = static::getDayHourHash($end)]) && $end >= reset($this->slotsByDayHours)->getStart()) {
+            $end = $end->modify('-1 hour');
+
+            if ($period->startsAfter($end))
+                throw new \RuntimeException("Unable to find a valid date within period {$period->asString()}: dayhash=$hash");
+        }
+
+        return $this->slotsByDayHours[$hash];
     }
 
     /**
@@ -1022,8 +1031,8 @@ class ScheduleManager implements ScheduleInterface
                 continue;
             }
 
-            $dayStart = $day->setTime(8, 0);
-            $dayEnd = $day->setTime(18, 0);
+            $dayStart = $day->modify(static::DAY_START);
+            $dayEnd = $day->modify(static::DAY_END);
 
             $businessHours = Period::make($dayStart, $dayEnd, Precision::HOUR(), Boundaries::EXCLUDE_END());
             foreach ($businessHours as $hour) {
@@ -1302,6 +1311,18 @@ class ScheduleManager implements ScheduleInterface
 
     //region DateTime utils
 
+    /**
+     * Preserves time of $afterOrAt if given.
+     */
+    public static function getClosestBusinessDay(\DateTimeInterface $afterOrAt = null): \DateTimeImmutable {
+        $afterOrAt = isset($afterOrAt) ? \DateTime::createFromInterface($afterOrAt) : new \DateTime(static::DAY_START);
+
+        while (NotItalianHolidayValidator::isItalianHoliday($afterOrAt, includePrefestivi: true) || in_array($afterOrAt->format('w'), [0,6]))
+            $afterOrAt->modify('+1day');
+
+        return \DateTimeImmutable::createFromMutable($afterOrAt);
+    }
+
     public static function ceilDateTimeToSlots(\DateTimeInterface $dateTime): \DateTimeImmutable
     {
         $timestamp = (int)ceil($dateTime->getTimestamp() / static::SLOT_INTERVAL) * static::SLOT_INTERVAL;
@@ -1319,7 +1340,7 @@ class ScheduleManager implements ScheduleInterface
     }
 
     /**
-     * Shrinks given boundaries to fit within the schedule period.
+     * Shrinks given boundaries to fit within schedule period.
      * $after is ceiled to the next exact hour (H+1:00:00).
      * $before is floored to the current exact hour (H:00:00).
      */
@@ -1340,14 +1361,14 @@ class ScheduleManager implements ScheduleInterface
         if (!isset($afterSlot))
             throw new \InvalidArgumentException("Period [{$after->format(DATE_ATOM)} {$before->format(DATE_ATOM)}] does not overlap schedule period {$this->getSchedulePeriod()->asString()}");
 
-        // Not easy to explain, but $before > $firstSlot is needed for the edge case where $before < $from to avoid infinite ::sub()
+        // $before > $firstSlot is needed for the edge case where $before < $from to avoid infinite ::sub()
         while (!($beforeSlot = $this->getSlotFromDateTime($before)) && $before > $firstSlot->getStart()) {
             $before->sub($interval);
         }
         if (!isset($beforeSlot))
             throw new \InvalidArgumentException("Period [{$after->format(DATE_ATOM)} {$before->format(DATE_ATOM)}] does not overlap schedule period {$this->getSchedulePeriod()->asString()}");
 
-        if ($before->getTimestamp() - $after->getTimestamp() < 3600) {
+        if ($before->getTimestamp() - $after->getTimestamp() < static::SLOT_INTERVAL) {
             throw new \RuntimeException("Given period is less than 1 hour");
         }
 

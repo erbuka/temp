@@ -5,10 +5,14 @@ namespace App\Controller\Api;
 
 use App\ConsultantSchedule;
 use App\Entity\Consultant;
+use App\Entity\ContractedService;
 use App\Entity\Schedule;
 use App\Entity\Task;
 use App\NoFreeSlotsAvailableException;
+use App\Repository\ScheduleRepository;
+use App\ScheduleManager;
 use App\ScheduleManagerFactory;
+use Doctrine\Common\Collections\Criteria;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
@@ -21,6 +25,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpKernel\Attribute\AsController;
@@ -40,7 +45,7 @@ class TaskController extends AbstractController
      *
      * @return JsonResponse
      */
-    #[Route('/', name: 'list', methods: ['GET'])]
+    #[Route(name: 'list', methods: ['GET'])]
     public function list(EntityManagerInterface $em, Connection $defaultConnection, Request $request): Response
     {
         // Detect filters early in order to avoid computing expensive defaults (e.g. fetch entities)
@@ -135,11 +140,143 @@ class TaskController extends AbstractController
 
     }
 
-    #[Route('/test', name: 'create', methods: ['GET'])]
-    public function create(EntityManagerInterface $entityManager, ScheduleManagerFactory $managerFactory): Response
+    /**
+     * TODO
+     *   - check enough hours free
+     */
+    #[Route(name: 'create', methods: ['POST'])]
+    public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $managerFactory): Response
     {
+        // TODO check permissions
+
+        // Parse parameters
+        if ($start = $request->request->get('start')) {
+            $start = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $start);
+            if (!$start || ($start->format('i:s') != '00:00'))
+                throw new BadRequestHttpException("Invalid start=$start");
+        }
+        if ($end = $request->request->get('end')) {
+            $end = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $end);
+            if (!$end || ($end->format('i:s') != '00:00'))
+                throw new BadRequestHttpException("Invalid end=$end");
+
+        }
+        $onPremises = $request->request->getBoolean('onPremises', false);
+
+        if ($scheduleId = $request->request->get('schedule')) {
+            $em->find(Schedule::class, (int)$scheduleId);
+        }
+        if ($contractedServiceID = $request->request->get('contractedService'))
+            $contractedService = $em->find(ContractedService::class, (int)$contractedServiceID);
+
+        // Default parameters
+        if (!isset($schedule) && isset($contractedService))
+            $schedule = $em->getRepository(Schedule::class)->findOneBy(['consultant' => $contractedService->getConsultant()]);
+
+        // Validate parameters
+        if (!isset($contractedService))
+            throw new BadRequestHttpException("Missing contractedService");
+        if (!isset($schedule) || $schedule->getConsultant() !== $contractedService->getConsultant())
+            throw new BadRequestHttpException('Missing schedule or schedule::consultant !== consultant');
+        if ($onPremises && $start < new \DateTime('+4days '.ScheduleManager::DAY_START))
+            throw new BadRequestHttpException("On premises task must not start earlier than 4 days from today");
 
         $task = new Task();
+        $task->setStart($start);
+        $task->setEnd($end);
+        $task->setOnPremises($onPremises);
+        $task->setContractedService($contractedService);
+
+        $errors = $validator->validate($task);
+        if (count($errors) > 0) throw new BadRequestHttpException("Invalid task ". $errors);
+
+        $manager = $managerFactory->createScheduleManager($schedule);
+
+        if ($task->isOnPremises()) {
+            // TODO what if any used task is in the target range? delay the task first
+
+            // start or end within the task's start-end
+            $criteria = Criteria::create()
+                ->where(Criteria::expr()->orX(
+                    // |$start ===== overlapping.start ===== $end|
+                    // $start <= task.start < $end
+                    Criteria::expr()->andX(
+                        Criteria::expr()->gte('start', $start),
+                        Criteria::expr()->lt('start', $end), // task.start == $end does not overlap
+                    ),
+                    // |$start ===== overlapping.end ===== $end|
+                    // $start < task.end <= $end
+                    Criteria::expr()->andX(
+                        Criteria::expr()->gt('end', $start), // task.end == $start does not overlap
+                        Criteria::expr()->lte('end', $end),
+                    ),
+                    // overlapping.start ====== |$start ---- $end| ===== overlapping.end
+                    // task.start < $start && task.end > $end
+                    Criteria::expr()->andX(
+                        Criteria::expr()->lt('start', $start),
+                        Criteria::expr()->gt('end', $end)
+                    )
+                ));
+            /** @var Task[] $overlapping */
+            $overlapping = $schedule->getTasks()->matching($criteria);
+
+            foreach ($overlapping as $overlappingTask) {
+                try {
+                    $manager->reallocateTaskToSameDayAdjacentSlots($overlappingTask, Period::make($task->getEnd(), $schedule->getTo(), Precision::HOUR(), Boundaries::EXCLUDE_END()));
+                } catch (NoFreeSlotsAvailableException $e) {
+                    throw new BadRequestHttpException("No free slots available");
+                }
+            }
+
+            /** @var Task[] $sourceTasks */
+            if (!isset($use)) {
+                // Use all onPremises task of this contracted_service that can be moved. Starts from tomorrow morning.
+                $criteria = ScheduleRepository::createTasksOnPremisesAfterCriteria($contractedService, new \DateTime('+1day '.ScheduleManager::DAY_START));
+                $sourceTasks = $schedule->getTasks()->matching($criteria);
+            } else {
+                $use = explode(',', $request->request->get('use'));
+                $sourceTasks = array_map(fn($taskId) => $em->find(Task::class, $taskId), $use);
+            }
+
+            $neededHours = $task->getHours();
+            $gotHours = 0;
+            $taskHoursToRemove = new \SplObjectStorage();
+            foreach ($sourceTasks as $sourceTask) {
+                if (!$taskHoursToRemove->contains($sourceTask))
+                    $taskHoursToRemove[$sourceTask] = 0;
+
+                while ($gotHours < $neededHours && $taskHoursToRemove[$sourceTask] < $sourceTask->getHours()) {
+                    $gotHours++;
+                    $taskHoursToRemove[$sourceTask] += 1;
+                }
+            }
+
+            /** @var Task[] $taskHoursToRemove */
+            foreach ($taskHoursToRemove as $removeTask) {
+                if ($removeTask->getHours() === $taskHoursToRemove[$removeTask])
+                    $manager->removeTask($removeTask);
+                else {
+                    $newPeriod = Period::make($removeTask->getStart(), $removeTask->getEnd()->modify("-{$taskHoursToRemove[$removeTask]} hours"), Precision::HOUR(), Boundaries::EXCLUDE_END());
+                    $manager->moveTask($removeTask, $newPeriod);
+                }
+            }
+
+            if ($neededHours > $gotHours)
+                throw new ConflictHttpException("Not enough free hours: available=$gotHours needed=$neededHours");
+        }
+
+        // TODO if target slots are allocated, then throw. Notice that if onPremises, then the above block should have moved the tasks.
+
+        $manager->addTask($task);
+
+        // Validate consultant Schedule
+//        if (count($errors = $validator->validate($manager, null, ['Default', 'consultant', 'generation'])) > 0)
+//            throw new \Exception("Invalid schedule for consultant {$consultant}:". $errors);
+
+        $em->flush();
+
+
+
 
         return new JsonResponse($this->jsonTask($task), Response::HTTP_CREATED);
     }
@@ -154,24 +291,10 @@ class TaskController extends AbstractController
 
     }
 
-    #[Route('/test', name: 'test', methods: ['GET'])]
-    public function test(EntityManagerInterface $entityManager, ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): Response
-    {
-//        $entityManager->getFilters()->disable('softdeleteable');
-        $schedule = current($entityManager->getRepository(Schedule::class)->findAll());
-        assert($schedule !== null);
-
-
-        // Actions on the individual task
-        $task = $schedule->getTasks()->first();
-
-        $entityManager->remove($task);
-        $entityManager->flush();
-
-        return new Response('ok');
-    }
-
     /**
+     *
+     * Delays at task farther in the future i.e. > today.
+     * On premises task must be delay by at least 4 days.
      *
      * TODO:
      *  - task must not be alrady exectued/performed: do this by simply applying the transition to 'scheduled' and see if it throws
@@ -198,7 +321,7 @@ class TaskController extends AbstractController
         if ($before = $request->request->get('before')) {
             $before = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $before);
             if (false === $before)
-                throw new BadRequestException();
+                throw new BadRequestHttpException();
         }
 
         $schedule = $task->getSchedule();
@@ -209,14 +332,20 @@ class TaskController extends AbstractController
             $before = $manager->getTo();
         }
         if (!$after) {
-            $after = $task->getEnd()->modify('+4days 08:00');
+            $after = new \DateTimeImmutable('+1day '.ScheduleManager::DAY_START);
+
+            if ($task->isOnPremises())
+                $after = $after->modify('+3days');
+
+            if ($task->getEnd()->modify(ScheduleManager::DAY_END) >= $after)
+                $after = $task->getEnd()->modify('+1day '. ScheduleManager::DAY_START);
         }
 
         // Validate parameters
         if ($after < $task->getEnd())
             throw new BadRequestHttpException("after={$after->format(DATE_ATOM)} must be after task end={$task->getEnd()->format(DATE_ATOM)})");
-        if ($after < $task->getEnd()->modify('+4days 08:00'))
-            throw new BadRequestHttpException("Tasks must be delayed by at least 4 days.");
+        if ($task->isOnPremises() && $after < (new \DateTime('+4days '.ScheduleManager::DAY_START)))
+            throw new BadRequestHttpException("On premises tasks must be delayed by at least 4 days.");
 
         $period = $manager->createFittedPeriodFromBoundaries($after, $before);
 
@@ -234,7 +363,6 @@ class TaskController extends AbstractController
 
         return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }
-
 
     private function jsonTask(Task $task): array
     {

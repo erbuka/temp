@@ -168,18 +168,18 @@ class ConsultantScheduleGenerator
 //                $task->setEnd($slot->getEnd()); // truncated by precision
 
                 try {
-                    $manager->allocateAdjacentSameDaySlots($task,
+                    $manager->allocateAdjacentSameDayFreeSlots($task,
                         preferred: min($preferredHours, $onPremisesHours),
                         period: $period,
                     );
                 } catch (NoFreeSlotsAvailableException $e) {
                     try {
-                        $manager->allocateAdjacentSameDaySlots($task,
+                        $manager->allocateAdjacentSameDayFreeSlots($task,
                             preferred: min($preferredHours, $onPremisesHours),
                             period: $mirrorPeriod,
                         );
                     } catch (NoFreeSlotsAvailableException $e) {
-                        $manager->allocateAdjacentSameDaySlots($task,
+                        $manager->allocateAdjacentSameDayFreeSlots($task,
                             preferred: min($preferredHours, $onPremisesHours),
                             period: $manager->getSchedulePeriod()
                         );

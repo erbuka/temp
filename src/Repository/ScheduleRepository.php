@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Consultant;
+use App\Entity\ContractedService;
 use App\Entity\Schedule;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Common\Collections\Criteria;
@@ -31,6 +32,15 @@ class ScheduleRepository extends ServiceEntityRepository
     {
         return Criteria::create()
             ->where(Criteria::expr()->eq('consultantName', $consultant->getName()));
+    }
+
+    public static function createTasksOnPremisesAfterCriteria(ContractedService $cs, \DateTimeInterface $after): Criteria
+    {
+        return Criteria::create()
+            ->where(Criteria::expr()->gt('start', $after))
+            ->andWhere(Criteria::expr()->eq('onPremises', true))
+            ->andWhere(Criteria::expr()->eq('contractedService', $cs))
+        ;
     }
 
     // /**
