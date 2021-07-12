@@ -13,7 +13,7 @@ use Symfony\Component\Routing\Annotation\Route;
 #[Route('/consultants', name: 'consultant_')]
 class ConsultantController
 {
-    #[Route('/', name:'list', methods:['GET'])]
+    #[Route(name:'list', methods:['GET'])]
     public function list(EntityManagerInterface $entityManager)
     {
         $consultants = $entityManager->getRepository(Consultant::class)->findAll();

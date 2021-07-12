@@ -2,14 +2,18 @@ security:
     enable_authenticator_manager: true
 
     # https://symfony.com/doc/current/security.html#where-do-users-come-from-user-providers
-    encoders:
-        Symfony\Component\Security\Core\User\User: 'auto'
+    password_hashers:
+        Symfony\Component\Security\Core\User\InMemoryUser: 'auto'
 
     providers:
+        consultants:
+            entity:
+                class: App\Entity\Consultant
+
         mvp:
             memory:
                 users:
-                    conagrivet: { roles: ['ROLE_ADMIN'], password: '$argon2id$v=19$m=65536,t=4,p=1$WZsFqAr07jEiipvNL+dW8Q$NihJWbSDF1Hk0V7qZll42QUfxnd3WmWxKjS7inab3Zg' }
+                    conagrivet: { roles: ['ROLE_ADMIN'], password: '$2y$13$xBhTzcUJOMKnWoPxki3OGuEO.db6cTZZOLPVAaWKiOBO3C9a/0oSS' }
 
     firewalls:
         dev:
@@ -17,8 +21,11 @@ security:
             security: false
 
         api:
-            pattern: ^/api/v\d/
-            security: false
+            pattern: ^/api/v1/
+            stateless: true
+            lazy: true
+            custom_authenticators:
+                - App\Security\JWSAuthenticator
 
         main:
             http_basic:
@@ -30,5 +37,12 @@ security:
     # Easy way to control access for large sections of your site
     # Note: Only the *first* access control that matches will be used
     access_control:
-        - { path: ^/api/v1/, roles: PUBLIC_ACCESS }
+        - { path: ^/api/v1/, roles: [ROLE_CONSULTANT] }
         - { path: ^/, roles: ROLE_ADMIN }
+
+jose:
+    keys:
+        api:
+            jwk:
+                value: '%env(trim:JWS_AUTH_JWK)%'
+                is_public: true

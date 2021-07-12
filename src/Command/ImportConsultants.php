@@ -27,6 +27,8 @@ class ImportConsultants extends Command
         'name' => 0,
         'title' => 1,
         'job_title' => 2,
+        'email' => 3,
+        'authcode' => 4,
     ];
 
     protected EntityManagerInterface $entityManager;
@@ -83,11 +85,17 @@ class ImportConsultants extends Command
         $deleted = array_flip(iterator_to_array($em->getConnection()->executeQuery("SELECT DISTINCT {$nameColumn} FROM {$tableName}")->iterateColumn()));
 
         $sql = "
-SELECT `name`, title, job as job_title
+SELECT `name`, title, job as job_title, email, authcode
 FROM ".static::RAW_TABLE."
 ";
 
-        foreach ($raw->executeQuery($sql)->iterateAssociative() as ['name' => $name, 'title' => $title, 'job_title' => $jobTitle]) {
+        foreach ($raw->executeQuery($sql)->iterateAssociative() as [
+            'name' => $name,
+            'title' => $title,
+            'job_title' => $jobTitle,
+            'email' => $email,
+            'authcode' => $authCode,
+        ]) {
             $consultant = $consultantsRepository->findOneBy(['name' => $name]);
             if (!$consultant)
                 $consultant = new Consultant();
@@ -95,6 +103,9 @@ FROM ".static::RAW_TABLE."
             $consultant->setName(ucwords(strtolower($name)));
             $consultant->setTitle(trim($title));
             $consultant->setJobTitle(trim($jobTitle));
+            $consultant->setEmail(strtolower(trim($email)));
+            $consultant->setAuthCode(trim($authCode));
+            $consultant->setRoles(['ROLE_CONSULTANT']);
 
             $errors = $this->validator->validate($consultant);
             if (count($errors) > 0) throw new \Exception("Cannot validate Consultant {$consultant->getName()}: ". $errors);
@@ -153,14 +164,16 @@ FROM ".static::RAW_TABLE."
 
         $insert = $this->rawConnection->prepare("
 INSERT INTO ".static::RAW_TABLE."
-(name, title, job)
-VALUES (:name, :title, :job_title)
+(`name`, title, job, email, authcode)
+VALUES (:name, :title, :job_title, :email, :authcode)
 ");
 
         foreach ($sheetRows as $row) {
             $insert->bindValue($name = 'name', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'title', $row[$sheetColumnsMap[$name]] ?? null);
             $insert->bindValue($name = 'job_title', $row[$sheetColumnsMap[$name]] ?? null);
+            $insert->bindValue($name = 'email', $row[$sheetColumnsMap[$name]] ?? null);
+            $insert->bindValue($name = 'authcode', $row[$sheetColumnsMap[$name]] ?? null);
 
             $insert->executeStatement();
         }

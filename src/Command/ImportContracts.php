@@ -233,6 +233,8 @@ INSERT INTO ".static::RAW_TABLE."
 ");
 
         foreach ($sheetRows as $row) {
+            if (empty($row[0]) && empty($row[1]) && empty($row[2]))  continue;
+
             $insert->bindValue($name = 'service_name', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'recipient_name', trim($row[$sheetColumnsMap[$name]]));
             $insert->bindValue($name = 'recipient_taxid', trim($row[$sheetColumnsMap[$name]]));

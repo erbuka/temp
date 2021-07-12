@@ -5,6 +5,8 @@ namespace App\Repository;
 use App\Entity\Consultant;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
+use Symfony\Component\Security\Core\User\UserInterface;
 
 /**
  * @method Consultant|null find($id, $lockMode = null, $lockVersion = null)
@@ -12,7 +14,7 @@ use Doctrine\Persistence\ManagerRegistry;
  * @method Consultant[]    findAll()
  * @method Consultant[]    findBy(array $criteria, array $orderBy = null, $limit = null, $offset = null)
  */
-class ConsultantRepository extends ServiceEntityRepository
+class ConsultantRepository extends ServiceEntityRepository implements UserLoaderInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
@@ -47,4 +49,13 @@ class ConsultantRepository extends ServiceEntityRepository
         ;
     }
     */
+    public function loadUserByIdentifier(string $identifier): ?Consultant
+    {
+        return $this->find($identifier);
+    }
+
+    public function loadUserByUsername(string $username): ?Consultant
+    {
+        return $this->loadUserByIdentifier($username);
+    }
 }
