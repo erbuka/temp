@@ -20,12 +20,14 @@
         <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.6.0/locales-all.js"></script>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@5.6.0/main.min.css">
 
-        <link rel="stylesheet" href="/{{ base }}/assets/styles/front.css">
-
+        <!-- App  -->
         {% for script in scripts %}
             <script type="module" src="/{{ base }}/{{ script.getRelativePathname() }}"></script>
         {% endfor %}
 
+        {% for style in styles %}
+            <link rel="stylesheet" href="/{{ base }}/assets/styles/{{ style.relativePathname }}">
+        {% endfor %}
     </head>
     <body>
         <header id="header">
@@ -38,7 +40,9 @@
                 <a href="/schedules-list" target="_blank">Elenco programmazioni preventive</a>
             </nav>
         </header>
+
         <main id="content"></main>
+
         <footer id="footer"></footer>
     </body>
 </html>

@@ -179,14 +179,14 @@ class FrontController extends AbstractController
             ->files()
             ->name('index.*.js');
 
-//        $styles = Finder::create()
-//            ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY."/assets/styles")
-//            ->files()
-//            ->name('*.css');
+        $styles = Finder::create()
+            ->in($this->getParameter('kernel.project_dir') ."/public/".static::APP_DIRECTORY."/assets/styles")
+            ->files()
+            ->name('*.css');
 
         return $this->render('app.html.twig', [
             'scripts' => $scripts,
-//            'styles' => $styles,
+            'styles' => $styles,
             'base' => static::APP_DIRECTORY
         ]);
     }
