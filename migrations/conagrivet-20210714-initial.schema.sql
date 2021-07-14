@@ -82,7 +82,7 @@ DROP TABLE IF EXISTS `contracted_service_extd`;
 /*!50001 DROP VIEW IF EXISTS `contracted_service_extd`*/;
 SET @saved_cs_client     = @@character_set_client;
 /*!50503 SET character_set_client = utf8mb4 */;
-/*!50001 CREATE VIEW `contracted_service_extd` AS SELECT 
+/*!50001 CREATE VIEW `contracted_service_extd` AS SELECT
  1 AS `id`,
  1 AS `recipient_id`,
  1 AS `recipient_name`,
@@ -245,7 +245,7 @@ DROP TABLE IF EXISTS `task_extd`;
 /*!50001 DROP VIEW IF EXISTS `task_extd`*/;
 SET @saved_cs_client     = @@character_set_client;
 /*!50503 SET character_set_client = utf8mb4 */;
-/*!50001 CREATE VIEW `task_extd` AS SELECT 
+/*!50001 CREATE VIEW `task_extd` AS SELECT
  1 AS `id`,
  1 AS `deleted`,
  1 AS `schedule_id`,
@@ -269,7 +269,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_0900_ai_ci */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `contracted_service_extd` AS select `cs`.`id` AS `id`,`r`.`id` AS `recipient_id`,`r`.`name` AS `recipient_name`,`cs`.`service_id` AS `service`,`cs`.`consultant_id` AS `consultant`,`s`.`hours` AS `hours`,`s`.`hours_on_premises` AS `hours_on_premises` from (((`contracted_service` `cs` left join `contract` `c` on((`cs`.`contract_id` = `c`.`id`))) left join `recipient` `r` on((`c`.`recipient_id` = `r`.`id`))) left join `service` `s` on((`cs`.`service_id` = `s`.`name`))) */;
@@ -287,7 +287,7 @@ SET character_set_client = @saved_cs_client;
 /*!50001 SET @saved_col_connection     = @@collation_connection */;
 /*!50001 SET character_set_client      = utf8mb4 */;
 /*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_0900_ai_ci */;
+/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
 /*!50001 VIEW `task_extd` AS select `t`.`id` AS `id`,if((`t`.`deleted_at` is null),0,1) AS `deleted`,`t`.`schedule_id` AS `schedule_id`,`t`.`contracted_service_id` AS `contracted_service_id`,`t`.`on_premises` AS `on_premises`,`t`.`start` AS `start`,`t`.`end` AS `end`,timestampdiff(HOUR,`t`.`start`,`t`.`end`) AS `hours`,`cs`.`consultant_id` AS `consultant`,`r`.`name` AS `recipient`,`cs`.`service_id` AS `service` from ((((`task` `t` left join `contracted_service` `cs` on((`t`.`contracted_service_id` = `cs`.`id`))) left join `contract` `c` on((`cs`.`contract_id` = `c`.`id`))) left join `recipient` `r` on((`c`.`recipient_id` = `r`.`id`))) left join `service` `s` on((`cs`.`service_id` = `s`.`name`))) */;
