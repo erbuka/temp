@@ -48,6 +48,12 @@ class TaskController extends AbstractController
     #[Route(name: 'list', methods: ['GET'])]
     public function list(EntityManagerInterface $em, Connection $defaultConnection, Request $request): Response
     {
+        /** @var Consultant $user */
+        $user = $this->getUser();
+        assert($user instanceof Consultant);
+
+        $this->denyAccessUnlessGranted('ROLE_CONSULTANT');
+
         // Detect filters early in order to avoid computing expensive defaults (e.g. fetch entities)
         $filter = $request->query->get('filter', []);
 
@@ -60,17 +66,23 @@ class TaskController extends AbstractController
             $filter['to'] = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $filter['to']);
             if (!$filter['to']) throw new BadRequestHttpException("Invalid to date");
         }
-        if (isset($filter['schedule'])) {
+        if (isset($filter['schedule']) && $this->isGranted('ROLE_ADMIN', $user)) {
             $filter['schedule'] = $em->getRepository(Schedule::class)->find($filter['schedule']);
             if (!$filter['schedule']) $this->createNotFoundException("Invalid schedule");
         }
         // TODO check permissions
         if (isset($filter['consultant'])) {
+            if (!$this->isGranted('ROLE_ADMIN', $user))
+                throw $this->createAccessDeniedException('Cannot set consultant uneless admin');
+
             $filter['consultant'] = $em->getRepository(Consultant::class)->find($filter['consultant']);
             if (!$filter['consultant']) $this->createNotFoundException("Invalid consultant");
         }
 
         // Defaults
+        if (!isset($filter['consultant'])) {
+            $filter['consultant'] = $user;
+        }
         if (!isset($filter['schedule'])) {
             // Fetch the latest consultant schedule
             assert(isset($filter['consultant']), "Cannot determine which schedule to fetch");
@@ -82,11 +94,13 @@ class TaskController extends AbstractController
         $qb->select('t')
             ->from(Task::class, 't')
             ->where('t.schedule = :schedule')
+            ->andWhere('t.consultantName = :consultant')
             ->orderBy('t.start', 'DESC')
         ;
 
         // Required parameters
         $qb->setParameter('schedule', $filter['schedule']);
+        $qb->setParameter('consultant', $filter['consultant']->getName());
 
         // Optional parameters
         if (isset($filter['from'])) {
@@ -97,11 +111,6 @@ class TaskController extends AbstractController
             $qb->andWhere('t.end <= :to');
             $qb->setParameter('to', $filter['to'], Types::DATETIME_IMMUTABLE);
         }
-        if (isset($filter['consultant'])) {
-            $qb->andWhere('t.consultantName = :consultant');
-            $qb->setParameter('consultant', $filter['consultant']->getName());
-        }
-
 
         $q = $qb->getQuery();
         $tasks = $qb->getQuery()->getResult();

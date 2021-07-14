@@ -37,7 +37,7 @@ class Consultant implements UserInterface, \Stringable
     private string $email;
 
     /**
-     * @ORM\Column(type="string", length=255, unique=true)
+     * @ORM\Column(type="string", length=255, unique=true, nullable=true)
      */
     private string $authCode;
 

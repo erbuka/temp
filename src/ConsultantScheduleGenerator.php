@@ -176,7 +176,7 @@ class ConsultantScheduleGenerator
                     try {
                         $manager->allocateAdjacentSameDayFreeSlots($task,
                             preferred: min($preferredHours, $onPremisesHours),
-                            period: $mirrorPeriod,
+                            period: $mirrorPeriod ?? $manager->getSchedulePeriod(),
                         );
                     } catch (NoFreeSlotsAvailableException $e) {
                         $manager->allocateAdjacentSameDayFreeSlots($task,

@@ -107,6 +107,10 @@ FROM ".static::RAW_TABLE."
             $consultant->setAuthCode(trim($authCode));
             $consultant->setRoles(['ROLE_CONSULTANT']);
 
+            // Grant admin status
+            if (in_array($consultant->getName(), ['Belelli Fiorenzo', 'Brugiafreddo Enrico']))
+                $consultant->setRoles(['ROLE_ADMIN', 'ROLE_CONSULTANT']);
+
             $errors = $this->validator->validate($consultant);
             if (count($errors) > 0) throw new \Exception("Cannot validate Consultant {$consultant->getName()}: ". $errors);
 

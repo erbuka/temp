@@ -109,8 +109,8 @@
             "bin/phpunit"
         ],
         "load-initial-schedule": [
-            "mysql -uroot conagrivet < src/DataFixtures/conagrivet-20210705.schema.sql",
-            "mysql -uroot conagrivet < src/DataFixtures/conagrivet-20210705.data.sql"
+            "mysql -uroot conagrivet < migrations/conagrivet-20210705-initial.schema.sql",
+          "mysql -uroot conagrivet < src/DataFixtures/conagrivet-20210705-initial.data.sql"
         ]
     },
     "conflict": {

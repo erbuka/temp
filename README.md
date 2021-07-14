@@ -41,6 +41,11 @@ must be performed. When entities are created/updated programmatically, the Valid
 - `./composer.phar dump-env prod`. Note that real environment variables always win over ones declared in .env files.
 - `./cachetool.phar opcache:reset`
 
+## Migrations
+SQL schema dumps in `migrations/*.schema.sql` are dumped *after* updating the schema.
+SQL data dumps in `src/DataFixtures/*.data.sql` are dumped *after* updating the schema, importing previous data, and optionally
+updating such data (e.g. added authentication codes for each consultant). 
+
 
 ## Entity-Relationship Model
 
