@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Conagrivet App</title>
+        <title>Conagrivet Gestionale</title>
 
         <link rel="icon" href="data:">
         <link rel="api" href="//{{ app.request.getHttpHost() }}/api/v1/" />
@@ -29,20 +29,6 @@
             <link rel="stylesheet" href="/{{ base }}/assets/styles/{{ style.relativePathname }}">
         {% endfor %}
     </head>
-    <body>
-        <header id="header">
-            <nav>
-                <a href="/">Pagina Initiale</a>
-                <a href="/analytics">Statistiche</a>
-                <a href="/calendar">Calendario</a>
-                <a href="/contracts-list" target="_blank">Contratti</a>
-                <a href="/schedules" target="_blank">Programma Preventivo</a>
-                <a href="/schedules-list" target="_blank">Elenco programmazioni preventive</a>
-            </nav>
-        </header>
 
-        <main id="content"></main>
-
-        <footer id="footer"></footer>
-    </body>
+    <body></body>
 </html>
