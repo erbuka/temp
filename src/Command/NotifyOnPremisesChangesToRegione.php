@@ -25,6 +25,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
+use Symfony\Component\Mime\Message;
 use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
 use Symfony\Component\Notifier\ChatterInterface;
 use Symfony\Component\Notifier\Message\ChatMessage;
@@ -130,14 +131,15 @@ class NotifyOnPremisesChangesToRegione extends Command
                     $output->writeln("Utilizzando le ore rimanenti dalle precedenti modifiche, viene programmata una consulenza in data $date alle ore $start - $end");
                 }
             }
-
-            $email = (new Email)
-                ->to('ete.dne@gmail.com')
-                ->subject('Aggiornamento programmazione ore in presenza')
-                ->text($message);
-
-            $this->mailer->send($email);
         }
+
+
+        $email = (new Email)
+            ->to('ete.dne@gmail.com')
+            ->subject('Aggiornamento programmazione ore in presenza')
+            ->text($message);
+
+        $this->mailer->send($email);
 
         return Command::SUCCESS;
     }

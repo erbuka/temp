@@ -5,6 +5,3 @@ framework:
             sender: 'noreply@conagrivet.it'
         headers:
             from: 'CONAGRIVET <noreply@conagrivet.it>'
-            bcc: 'Ettore Del Negro <ettore@themecraft.studio>'
-
-
