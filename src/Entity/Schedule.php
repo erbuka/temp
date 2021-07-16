@@ -22,6 +22,9 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 /**
  * Schedule validation should be performed without the use of a manager
  * so to avoid issues with out-of-sync memoized state.
+ *
+ * TODO: check excess of remote hours
+ *
  * @ORM\Entity(repositoryClass=ScheduleRepository::class)
  */
 #[ScheduleAssert\TasksWithinBounds]

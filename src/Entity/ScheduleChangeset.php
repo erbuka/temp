@@ -38,6 +38,11 @@ class ScheduleChangeset
     protected \DateTimeImmutable $createdAt;
 
     /**
+     * @ORM\Column(type="boolean", nullable=true)
+     */
+    private bool $notified;
+
+    /**
      * @ORM\OneToMany(targetEntity=ScheduleCommand::class, mappedBy="changeset", orphanRemoval=true, cascade={"persist", "remove"})
      * @ORM\OrderBy({"order" = "ASC"})
      */
@@ -65,6 +70,17 @@ class ScheduleChangeset
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getNotified(): bool
+    {
+        return $this->notified;
+    }
+
+    public function setNotified(bool $notified): static
+    {
+        $this->notified = $notified;
+        return $this;
     }
 
     /**

@@ -2,21 +2,21 @@ framework:
     workflows:
         task:
             type: 'workflow'
+            audit_trail:
+                enabled: true
             marking_store:
                 type: 'method'
                 property: 'state'
             supports:
                 - App\Entity\Task
-            initial_marking: start
+            initial_marking: tentative
             places:
-                - start
+                - tentative
                 - scheduled
-                - executed
-                - settled
+#                - executed
+#                - settled
             transitions:
                 schedule:
-                    from: [start]
-                    to: [scheduled, executed]
-                settle:
-                    from: [executed]
-                    to: settled
+                    from: [tentative]
+                    to: [scheduled]
+

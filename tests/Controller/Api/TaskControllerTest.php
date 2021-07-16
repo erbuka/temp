@@ -335,7 +335,7 @@ class TaskControllerTest extends WebTestCase
 
     public function provideEmptyScheduleAndContract()
     {
-        $consultant = (new Consultant())->setName('Cugusi Mario');
+        $consultant = (new Consultant())->setName('Cugusi Mario')->setEmail('test@conagrivet.it')->setRoles(['ROLE_CONSULTANT']);
         $schedule = (new Schedule($from = new \DateTimeImmutable('-1 months'), $from->modify('+2 months')))
             ->setConsultant($consultant);
         $contract = (new Contract)

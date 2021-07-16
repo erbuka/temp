@@ -203,4 +203,26 @@ class Task implements \Stringable
     {
         return Period::make($this->getStart(), $this->getEnd(), Precision::HOUR(), Boundaries::EXCLUDE_END());
     }
+
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->getId(),
+            'start' => $this->getStart()->format(DATE_RFC3339),
+            'end' => $this->getEnd()->format(DATE_RFC3339),
+            'onPremises' => $this->isOnPremises(),
+            'schedule' => $this->getSchedule()->getId(),
+            'contractedService' => $this->getContractedService()->getId(),
+            'consultant' => $this->getConsultant()->getName(),
+            'service' => $this->getService()->getName(),
+            'recipient' => ['id' => $this->getRecipient()->getId(), 'name' => $this->getRecipient()->getName()],
+            'state' => $this->getState(),
+            // FullCalendar fields
+            'backgroundColor' => match ($this->isOnPremises()) {
+                true => 'green',
+                false => 'cornflowerblue'
+            },
+            'title' => "{$this->getService()} | {$this->getRecipient()}",
+        ];
+    }
 }

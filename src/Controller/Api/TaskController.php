@@ -27,6 +27,11 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\Notifier\Bridge\Telegram\TelegramOptions;
+use Symfony\Component\Notifier\ChatterInterface;
+use Symfony\Component\Notifier\Exception\TransportExceptionInterface;
+use Symfony\Component\Notifier\Message\ChatMessage;
+use Symfony\Component\Notifier\NotifierInterface;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -42,6 +47,7 @@ class TaskController extends AbstractController
      * filter[consultant]: Consultant::name
      * filter[from]: DATE_ATOM
      * filter[to]: DATE_ATOM
+     * filter[onpremises]: bool returns onpremises tasks only
      *
      * @return JsonResponse
      */
@@ -52,10 +58,9 @@ class TaskController extends AbstractController
         $user = $this->getUser();
         assert($user instanceof Consultant);
 
-        $this->denyAccessUnlessGranted('ROLE_CONSULTANT');
-
         // Detect filters early in order to avoid computing expensive defaults (e.g. fetch entities)
         $filter = $request->query->get('filter', []);
+        $sort = explode(',', $request->query->get('sort', ''));
 
         // Parse filters
         if (isset($filter['from'])) {
@@ -65,6 +70,9 @@ class TaskController extends AbstractController
         if (isset($filter['to'])) {
             $filter['to'] = \DateTimeImmutable::createFromFormat(DATE_RFC3339, $filter['to']);
             if (!$filter['to']) throw new BadRequestHttpException("Invalid to date");
+        }
+        if (isset($filter['onpremises'])) {
+            $filter['onpremises'] = (bool)$filter['onpremises'];
         }
         if (isset($filter['schedule']) && $this->isGranted('ROLE_ADMIN', $user)) {
             $filter['schedule'] = $em->getRepository(Schedule::class)->find($filter['schedule']);
@@ -95,7 +103,6 @@ class TaskController extends AbstractController
             ->from(Task::class, 't')
             ->where('t.schedule = :schedule')
             ->andWhere('t.consultantName = :consultant')
-            ->orderBy('t.start', 'DESC')
         ;
 
         // Required parameters
@@ -111,37 +118,25 @@ class TaskController extends AbstractController
             $qb->andWhere('t.end <= :to');
             $qb->setParameter('to', $filter['to'], Types::DATETIME_IMMUTABLE);
         }
+        if (isset($filter['onpremises'])) {
+            $qb->andWhere('t.onPremises = :onPremises');
+            $qb->setParameter('onPremises', $filter['onpremises'], Types::BOOLEAN);
+        }
+        if (in_array('start', $sort)) {
+            $qb->orderBy('t.start', 'ASC');
+        } elseif (in_array('-start', $sort))
+            $qb->orderBy('t.start', 'DESC');
 
         $q = $qb->getQuery();
         $tasks = $qb->getQuery()->getResult();
 
-        $data = [];
+        $respData = [];
         foreach ($tasks as $task) {
             /** @var Task $task */
-            $isOnPremises = $task->isOnPremises();
-
-            $data[] = [
-                'id' => $task->getId(),
-                'start' => $task->getStart()->format(DATE_ATOM),
-                'end' => $task->getEnd()->format(DATE_ATOM),
-//                'title' => "{$task->getService()} @ {$task->getRecipient()->getHeadquarters()} - {$task->getRecipient()}",
-                'title' => "{$task->getService()} | {$task->getRecipient()}",
-                'backgroundColor' => match ($isOnPremises) {
-                    true => 'green',
-                    false => 'cornflowerblue'
-                },
-                'extendedProps' => [
-                    'on_premises' => $task->isOnPremises(),
-                    'consultant' => $task->getConsultant()->getName(),
-                    'recipient' => $task->getRecipient()->getName(),
-                    'recipient_location' => $task->getRecipient()->getHeadquarters(),
-                    'service' => $task->getService()->getName(),
-                    'schedule_id' => $task->getSchedule()->getUuid()->toRfc4122()
-                ]
-            ];
+            $respData[] = $task->toArray();
         }
 
-        return new JsonResponse($data);
+        return new JsonResponse($respData);
     }
 
     public function fetch()
@@ -156,7 +151,9 @@ class TaskController extends AbstractController
     #[Route(name: 'create', methods: ['POST'])]
     public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $managerFactory): Response
     {
-        // TODO check permissions
+        /** @var Consultant $user */
+        $user = $this->getUser();
+        assert($user instanceof Consultant);
 
         // Parse parameters
         if ($start = $request->request->get('start')) {
@@ -284,9 +281,6 @@ class TaskController extends AbstractController
 
         $em->flush();
 
-
-
-
         return new JsonResponse($this->jsonTask($task), Response::HTTP_CREATED);
     }
 
@@ -314,12 +308,18 @@ class TaskController extends AbstractController
      * @return Response
      */
     #[Route('/{taskId<\d+>}/delay', name: 'delay', methods: ['POST'])]
-    public function delay(int $taskId, Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory): JsonResponse
+    public function delay(int $taskId, Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $scheduleManagerFactory, ?ChatterInterface $chatter): JsonResponse
     {
-        // TODO check permissions
+        /** @var Consultant $user */
+        $user = $this->getUser();
+        assert($user instanceof Consultant);
+
         $task = $em->find(Task::class, $taskId);
         if (!$task)
             throw $this->createNotFoundException("Task not found");
+
+        if ($task->getConsultant() !== $user && !$this->isGranted('ROLE_ADMIN', $user))
+            throw $this->createAccessDeniedException();
 
         // Parse parameters
         if ($after = $request->request->get('after')) {
@@ -364,13 +364,24 @@ class TaskController extends AbstractController
             throw new BadRequestHttpException("No free slots available");
         }
 
-        $changeset = $manager->getScheduleChangeset();
+        // Validate consultant Schedule
+        if (count($errors = $validator->validate($manager, null, ['Default', 'consultant'])) > 0)
+            throw new \Exception("Invalid schedule for consultant {$schedule->getConsultant()}:". $errors);
 
+        $changeset = $manager->getScheduleChangeset();
         $em->persist($changeset);
+
+        if ($chatter) {
+            $message = new ChatMessage("<b>{$user}</b> ha rinviato il task <b>{$task->getId()}</b> al [{$task->getStart()->format(DATE_RFC3339)} {$task->getEnd()->format(DATE_RFC3339)}]");
+            $message->options((new TelegramOptions())->parseMode('html')->disableNotification(true));
+            try {
+                $chatter->send($message);
+            } catch (TransportExceptionInterface $e) {}
+        }
 
         $em->flush();
 
-        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+        return new JsonResponse($task->toArray(), Response::HTTP_OK);
     }
 
     private function jsonTask(Task $task): array

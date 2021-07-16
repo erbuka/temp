@@ -60,4 +60,14 @@ class MoveTaskCommand extends TaskCommand
         $task->setStart($this->previousStart);
         $task->setEnd($this->previousEnd);
     }
+
+    public function getPreviousStart(): \DateTimeImmutable
+    {
+        return $this->previousStart;
+    }
+
+    public function getPreviousEnd(): \DateTimeImmutable
+    {
+        return $this->previousEnd;
+    }
 }

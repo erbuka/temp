@@ -23,9 +23,9 @@ DROP TABLE IF EXISTS `consultant`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `consultant` (
-  `name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `title` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `job_title` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `title` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `job_title` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `auth_code` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `roles` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '(DC2Type:simple_array)',
@@ -44,7 +44,7 @@ DROP TABLE IF EXISTS `contract`;
 CREATE TABLE `contract` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `recipient_id` int unsigned NOT NULL,
-  `notes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `notes` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`id`),
   KEY `IDX_E98F2859E92F8F78` (`recipient_id`),
   CONSTRAINT `FK_E98F2859E92F8F78` FOREIGN KEY (`recipient_id`) REFERENCES `recipient` (`id`)
@@ -61,8 +61,8 @@ DROP TABLE IF EXISTS `contracted_service`;
 CREATE TABLE `contracted_service` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `contract_id` int unsigned NOT NULL,
-  `service_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `consultant_id` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `service_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `consultant_id` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `contract_unique` (`contract_id`,`service_id`,`consultant_id`),
   KEY `IDX_45372AA72576E0FD` (`contract_id`),
@@ -82,7 +82,7 @@ DROP TABLE IF EXISTS `contracted_service_extd`;
 /*!50001 DROP VIEW IF EXISTS `contracted_service_extd`*/;
 SET @saved_cs_client     = @@character_set_client;
 /*!50503 SET character_set_client = utf8mb4 */;
-/*!50001 CREATE VIEW `contracted_service_extd` AS SELECT
+/*!50001 CREATE VIEW `contracted_service_extd` AS SELECT 
  1 AS `id`,
  1 AS `recipient_id`,
  1 AS `recipient_name`,
@@ -100,7 +100,7 @@ DROP TABLE IF EXISTS `doctrine_migration_versions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `doctrine_migration_versions` (
-  `version` varchar(191) COLLATE utf8_unicode_ci NOT NULL,
+  `version` varchar(191) CHARACTER SET utf8 COLLATE utf8_unicode_ci NOT NULL,
   `executed_at` datetime DEFAULT NULL,
   `execution_time` int DEFAULT NULL,
   PRIMARY KEY (`version`)
@@ -116,15 +116,15 @@ DROP TABLE IF EXISTS `recipient`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `recipient` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `vat_id` varchar(13) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `fiscal_code` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `headquarters` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `vat_id` varchar(13) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `fiscal_code` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `headquarters` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `UNIQ_6804FB495E237E06` (`name`),
   UNIQUE KEY `UNIQ_6804FB49B5B63A6B` (`vat_id`),
   UNIQUE KEY `UNIQ_6804FB49D7BBA58B` (`fiscal_code`)
-) ENGINE=InnoDB AUTO_INCREMENT=389 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -136,7 +136,7 @@ DROP TABLE IF EXISTS `schedule`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `schedule` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
-  `consultant_id` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `consultant_id` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `uuid` binary(16) NOT NULL COMMENT '(DC2Type:uuid)',
   `from` datetime NOT NULL COMMENT '(DC2Type:datetime_immutable)',
   `to` datetime NOT NULL COMMENT '(DC2Type:datetime_immutable)',
@@ -144,7 +144,7 @@ CREATE TABLE `schedule` (
   PRIMARY KEY (`id`),
   KEY `IDX_5A3811FB44F779A2` (`consultant_id`),
   CONSTRAINT `FK_5A3811FB44F779A2` FOREIGN KEY (`consultant_id`) REFERENCES `consultant` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -158,6 +158,7 @@ CREATE TABLE `schedule_changeset` (
   `id` binary(16) NOT NULL COMMENT '(DC2Type:ulid)',
   `schedule_id` int unsigned NOT NULL,
   `created_at` datetime NOT NULL COMMENT '(DC2Type:datetime_immutable)',
+  `notified` tinyint(1) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `IDX_6E6F1568A40BC2D5` (`schedule_id`),
   CONSTRAINT `FK_6E6F1568A40BC2D5` FOREIGN KEY (`schedule_id`) REFERENCES `schedule` (`id`) ON DELETE CASCADE
@@ -176,7 +177,7 @@ CREATE TABLE `schedule_command` (
   `changeset_id` binary(16) NOT NULL COMMENT '(DC2Type:ulid)',
   `task_id` int unsigned NOT NULL,
   `order` int unsigned NOT NULL,
-  `action` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `start` datetime DEFAULT NULL COMMENT '(DC2Type:datetime_immutable)',
   `end` datetime DEFAULT NULL COMMENT '(DC2Type:datetime_immutable)',
   `previous_start` datetime DEFAULT NULL COMMENT '(DC2Type:datetime_immutable)',
@@ -197,14 +198,14 @@ DROP TABLE IF EXISTS `service`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `service` (
-  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `hours` smallint unsigned NOT NULL,
   `hours_on_premises` smallint unsigned NOT NULL,
-  `description` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `category` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
-  `steps` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '(DC2Type:array)',
-  `reasons` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT '(DC2Type:array)',
-  `expectations` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `description` longtext COLLATE utf8mb4_unicode_ci,
+  `category` longtext COLLATE utf8mb4_unicode_ci,
+  `steps` longtext COLLATE utf8mb4_unicode_ci COMMENT '(DC2Type:array)',
+  `reasons` longtext COLLATE utf8mb4_unicode_ci COMMENT '(DC2Type:array)',
+  `expectations` longtext COLLATE utf8mb4_unicode_ci,
   `from_date` date DEFAULT NULL,
   `to_date` date DEFAULT NULL,
   `task_preferred_on_premises_hours` smallint unsigned DEFAULT NULL,
@@ -226,15 +227,15 @@ CREATE TABLE `task` (
   `start` datetime NOT NULL COMMENT '(DC2Type:datetime_immutable)',
   `end` datetime NOT NULL COMMENT '(DC2Type:datetime_immutable)',
   `on_premises` tinyint(1) NOT NULL,
-  `state` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '(DC2Type:array)',
-  `consultant_name` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `state` longtext COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '(DC2Type:array)',
+  `consultant_name` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `deleted_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `IDX_527EDB25A40BC2D5` (`schedule_id`),
   KEY `IDX_527EDB256DA0E7B7` (`contracted_service_id`),
   CONSTRAINT `FK_527EDB256DA0E7B7` FOREIGN KEY (`contracted_service_id`) REFERENCES `contracted_service` (`id`),
   CONSTRAINT `FK_527EDB25A40BC2D5` FOREIGN KEY (`schedule_id`) REFERENCES `schedule` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=7838 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -245,7 +246,7 @@ DROP TABLE IF EXISTS `task_extd`;
 /*!50001 DROP VIEW IF EXISTS `task_extd`*/;
 SET @saved_cs_client     = @@character_set_client;
 /*!50503 SET character_set_client = utf8mb4 */;
-/*!50001 CREATE VIEW `task_extd` AS SELECT
+/*!50001 CREATE VIEW `task_extd` AS SELECT 
  1 AS `id`,
  1 AS `deleted`,
  1 AS `schedule_id`,
@@ -304,4 +305,4 @@ SET character_set_client = @saved_cs_client;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2021-07-14 16:51:39
+-- Dump completed on 2021-07-16  2:44:39
