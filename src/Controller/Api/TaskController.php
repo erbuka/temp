@@ -242,15 +242,24 @@ class TaskController extends AbstractController
                 }
             }
 
+            
+
             /** @var Task[] $sourceTasks */
+
+
+            /*
             if (!isset($use)) {
                 // Use all onPremises task of this contracted_service that can be moved. Starts from tomorrow morning.
                 $criteria = ScheduleRepository::createTasksOnPremisesAfterCriteria($contractedService, new \DateTime('+1day '.ScheduleManager::DAY_START));
                 $sourceTasks = $schedule->getTasks()->matching($criteria);
-            } else {
-                $use = explode(',', $request->request->get('use'));
-                $sourceTasks = array_map(fn($taskId) => $em->find(Task::class, $taskId), $use);
             }
+            */
+
+            $use = $request->request->get("task");
+
+            if(is_array($use)) {
+                $sourceTasks = array_map(fn($taskId) => $em->find(Task::class, $taskId), array_values($use));
+            } else throw new BadRequestHttpException();
 
             $neededHours = $task->getHours();
             $gotHours = 0;
@@ -289,6 +298,8 @@ class TaskController extends AbstractController
 
         $changeset = $manager->getScheduleChangeset();
         $em->persist($changeset);
+        
+        $em->flush();
 
         if ($chatter) {
             $message = new ChatMessage("<b>{$user}</b> ha rinviato il task <b>{$task->getId()}</b> al [{$task->getStart()->format(DATE_RFC3339)} {$task->getEnd()->format(DATE_RFC3339)}]");
@@ -298,7 +309,6 @@ class TaskController extends AbstractController
             } catch (TransportExceptionInterface $e) {}
         }
 
-        $em->flush();
 
         return new JsonResponse($this->jsonTask($task), Response::HTTP_CREATED);
     }

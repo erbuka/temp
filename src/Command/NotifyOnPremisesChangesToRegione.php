@@ -60,6 +60,8 @@ class NotifyOnPremisesChangesToRegione extends Command
     {
         $message = '';
 
+        $this->entityManager->getFilters()->disable('softdeleteable');
+        
         foreach ($this->entityManager->getRepository(Consultant::class)->findAll() as $consultant) {
             $schedule = $this->entityManager->getRepository(Schedule::class)->findOneBy(['consultant' => $consultant]);
 
@@ -149,6 +151,8 @@ class NotifyOnPremisesChangesToRegione extends Command
         } catch (TransportExceptionInterface $e) {
             return Command::FAILURE;
         }
+
+        $this->entityManager->getFilters()->enable('softdeleteable');
 
         return Command::SUCCESS;
     }

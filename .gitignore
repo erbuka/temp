@@ -27,3 +27,5 @@ Thumbs.db
 /phpunit.xml
 .phpunit.result.cache
 ###< phpunit/phpunit ###
+
+/tmp

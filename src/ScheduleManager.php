@@ -518,9 +518,11 @@ class ScheduleManager implements ScheduleInterface
     {
         if (!$this->containsTask($task))
             throw new \InvalidArgumentException("Task {$task} does not belong to schedule {$this->schedule}");
+        /*
         if ($period->contains($task->getPeriod()))
             throw new \InvalidArgumentException("Given period {$period->asString()} must not include the task {$task}");
-
+        */
+        
         $slots = $this->getRandomSameDayAdjacentFreeSlots(period: $period, min: $task->getHours(), preferred: $task->getHours(), max: $task->getHours());
         assert(count($slots) === $task->getHours());
         assert(empty(array_filter($slots, fn($slot) => $slot->isAllocated())), "Returned slots are not empty");
