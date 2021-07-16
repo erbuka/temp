@@ -18,6 +18,7 @@ return function(ContainerConfigurator $configurator) {
             ->autowire()      // Automatically injects dependencies in your services.
             ->autoconfigure() // Automatically registers your services as commands, event subscribers, etc.
             ->bind('$cacheDir', '%kernel.cache_dir%')
+            ->bind('$emailRegione', '%env(trim:EMAIL_REGIONE)%')
     ;
 
     $services->alias(JWK::class.' $apiJwk', 'jose.key.api');

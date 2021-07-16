@@ -23,6 +23,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Message;
@@ -43,12 +44,14 @@ class NotifyOnPremisesChangesToRegione extends Command
     private ChatterInterface $chatter;
     private EntityManagerInterface $entityManager;
     private MailerInterface $mailer;
+    private string $emailRegione;
 
-    public function __construct(EntityManagerInterface $entityManager, ChatterInterface $chatter, MailerInterface $mailer)
+    public function __construct(EntityManagerInterface $entityManager, ChatterInterface $chatter, MailerInterface $mailer, string $emailRegione)
     {
         $this->entityManager = $entityManager;
         $this->chatter = $chatter;
         $this->mailer = $mailer;
+        $this->emailRegione = $emailRegione;
 
         parent::__construct();
     }
@@ -65,6 +68,7 @@ class NotifyOnPremisesChangesToRegione extends Command
                 ->from(ScheduleChangeset::class, 'sc')
                 ->where('sc.schedule = :schedule')
                 ->andWhere('sc.createdAt >= :start AND sc.createdAt < :end')
+                ->andWhere('sc.notified IS NULL')
                 ->orderBy('sc.createdAt', 'ASC');
 
             $qb->setParameter('start', (new \DateTime)->modify('00:00'));
@@ -85,6 +89,7 @@ class NotifyOnPremisesChangesToRegione extends Command
                         $byRecipient[$recipient] = [];
 
                     $byRecipient[$recipient] = [...$byRecipient[$recipient], $cmd];
+                    $cs->setNotified(true);
                 }
             }
 
@@ -105,7 +110,7 @@ class NotifyOnPremisesChangesToRegione extends Command
                     $end = $c->getTask()->getEnd()->format('H:i');
 
                     $message .= "\nLa consulenza prevista in data $date alla ora $start - $end è stata cancellata e le ore previste verranno redistribuite fra le seguenti.";
-                    $output->writeln("La consulenza prevista in data $date alla ora $start - $end è stata cancellata e le ore previste verranno redistribuite fra le seguenti.");
+//                    $output->writeln("La consulenza prevista in data $date alla ora $start - $end è stata cancellata e le ore previste verranno redistribuite fra le seguenti.");
                 }
 
                 foreach ($moved as $c) {
@@ -118,7 +123,7 @@ class NotifyOnPremisesChangesToRegione extends Command
                     $oldDate = $c->getPreviousStart()->format('Y/m/d');
 
                     $message .= "\nLa consulenza prevista in data $oldDate alle ore $oldStart - $oldEnd verrà invece eseguita il $date alle ore $start - $end.";
-                    $output->writeln("La consulenza prevista in data $oldDate alle ore $oldStart - $oldEnd verrà invece eseguita il $date alle ore $start - $end.");
+//                    $output->writeln("La consulenza prevista in data $oldDate alle ore $oldStart - $oldEnd verrà invece eseguita il $date alle ore $start - $end.");
                 }
 
                 foreach ($added as $c) {
@@ -128,18 +133,22 @@ class NotifyOnPremisesChangesToRegione extends Command
                     $end = $c->getTask()->getEnd()->format('H:i');
 
                     $message .= "\nUtilizzando le ore rimanenti dalle precedenti modifiche, viene programmata una consulenza in data $date alle ore $start - $end";
-                    $output->writeln("Utilizzando le ore rimanenti dalle precedenti modifiche, viene programmata una consulenza in data $date alle ore $start - $end");
+//                    $output->writeln("Utilizzando le ore rimanenti dalle precedenti modifiche, viene programmata una consulenza in data $date alle ore $start - $end");
                 }
             }
         }
 
-
         $email = (new Email)
-            ->to('ete.dne@gmail.com')
+            ->to($this->emailRegione)
             ->subject('Aggiornamento programmazione ore in presenza')
             ->text($message);
 
-        $this->mailer->send($email);
+        try {
+            $this->mailer->send($email);
+            $this->entityManager->flush();
+        } catch (TransportExceptionInterface $e) {
+            return Command::FAILURE;
+        }
 
         return Command::SUCCESS;
     }

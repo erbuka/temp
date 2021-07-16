@@ -37,7 +37,7 @@ use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[AsController]
-#[Route('/tasks', name: 'calendar-tasks_')]
+#[Route('/tasks', name: 'tasks_')]
 class TaskController extends AbstractController
 {
     /**
@@ -48,6 +48,7 @@ class TaskController extends AbstractController
      * filter[from]: DATE_ATOM
      * filter[to]: DATE_ATOM
      * filter[onpremises]: bool returns onpremises tasks only
+     * filter[contractedservice]: number id of ContractedService
      *
      * @return JsonResponse
      */
@@ -78,7 +79,10 @@ class TaskController extends AbstractController
             $filter['schedule'] = $em->getRepository(Schedule::class)->find($filter['schedule']);
             if (!$filter['schedule']) $this->createNotFoundException("Invalid schedule");
         }
-        // TODO check permissions
+        if (isset($filter['contractedservice']) && is_numeric($filter['contractedservice'])) {
+            $filter['contractedservice'] = $em->getRepository(ContractedService::class)->find((int)$filter['contractedservice']);
+            if (!$filter['contractedservice']) $this->createNotFoundException("Invalid contracted service id {$filter['contractedservice']}");
+        }
         if (isset($filter['consultant'])) {
             if (!$this->isGranted('ROLE_ADMIN', $user))
                 throw $this->createAccessDeniedException('Cannot set consultant uneless admin');
@@ -122,6 +126,10 @@ class TaskController extends AbstractController
             $qb->andWhere('t.onPremises = :onPremises');
             $qb->setParameter('onPremises', $filter['onpremises'], Types::BOOLEAN);
         }
+        if (isset($filter['contractedservice'])) {
+            $qb->andWhere('t.contractedService = :contractedService');
+            $qb->setParameter('contractedService', $filter['contractedservice']);
+        }
         if (in_array('start', $sort)) {
             $qb->orderBy('t.start', 'ASC');
         } elseif (in_array('-start', $sort))
@@ -149,7 +157,7 @@ class TaskController extends AbstractController
      *   - check enough hours free
      */
     #[Route(name: 'create', methods: ['POST'])]
-    public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $managerFactory): Response
+    public function create(Request $request, EntityManagerInterface $em, ValidatorInterface $validator, ScheduleManagerFactory $managerFactory, ?ChatterInterface $chatter): Response
     {
         /** @var Consultant $user */
         $user = $this->getUser();
@@ -276,8 +284,19 @@ class TaskController extends AbstractController
         $manager->addTask($task);
 
         // Validate consultant Schedule
-//        if (count($errors = $validator->validate($manager, null, ['Default', 'consultant', 'generation'])) > 0)
-//            throw new \Exception("Invalid schedule for consultant {$consultant}:". $errors);
+        if (count($errors = $validator->validate($manager, null, ['Default', 'consultant'])) > 0)
+            throw new \Exception("Invalid schedule for consultant {$consultant}:". $errors);
+
+        $changeset = $manager->getScheduleChangeset();
+        $em->persist($changeset);
+
+        if ($chatter) {
+            $message = new ChatMessage("<b>{$user}</b> ha rinviato il task <b>{$task->getId()}</b> al [{$task->getStart()->format(DATE_RFC3339)} {$task->getEnd()->format(DATE_RFC3339)}]");
+            $message->options((new TelegramOptions())->parseMode('html')->disableNotification(true));
+            try {
+                $chatter->send($message);
+            } catch (TransportExceptionInterface $e) {}
+        }
 
         $em->flush();
 

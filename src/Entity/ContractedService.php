@@ -114,4 +114,15 @@ class ContractedService implements \Stringable
     {
         return "({$this->getConsultant()}, {$this->getRecipient()}, {$this->getService()})";
     }
+
+    public function toArray(): array
+    {
+        return [
+            'id' => $this->getId(),
+            'recipient' => $this->getRecipientName(),
+            'service' => $this->getService()->getName(),
+            'hours' => $this->getHours(),
+            'hours_onpremises' => $this->getHoursOnPremises(),
+        ];
+    }
 }
